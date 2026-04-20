@@ -53,9 +53,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
 
+  // Pig animation state
+  const [pigs, setPigs] = useState([]);
+
   // Load LIVE from Firebase
   useEffect(() => {
-    document.title = "john pork123"; // Changes tab name!
+    document.title = "john pork123";
 
     const playersRef = ref(db, 'players');
     const barsRef = ref(db, 'progressBars');
@@ -91,7 +94,6 @@ export default function App() {
   }, []);
 
   const sorted = [...players].sort((a, b) => b.money - a.money);
-  // Calculate total pot from all players
   const total = players.reduce((s, p) => s + p.money, 0);
 
   function showToast(msg, type = "success") {
@@ -111,6 +113,32 @@ export default function App() {
       setPwError(true);
       setTimeout(() => setPwError(false), 600);
     }
+  }
+
+  // --- BACKGROUND CLICK PIG ANIMATION ---
+  function handleBackgroundClick(e) {
+    // Prevent pigs from spawning if they click on an interactive element or card
+    const isInteractive = e.target.closest('.card') || 
+                          e.target.closest('.prog-card') || 
+                          e.target.closest('.add-section') || 
+                          e.target.closest('.modal') || 
+                          e.target.tagName.toLowerCase() === 'button' || 
+                          e.target.tagName.toLowerCase() === 'input';
+
+    if (isInteractive) return;
+
+    const newPig = {
+      id: Date.now(),
+      x: e.clientX,
+      y: e.clientY
+    };
+
+    setPigs(prev => [...prev, newPig]);
+
+    // Remove the pig after the animation completes (1 second)
+    setTimeout(() => {
+      setPigs(prev => prev.filter(p => p.id !== newPig.id));
+    }, 1000);
   }
 
   // --- PLAYER CONTROLS ---
@@ -204,7 +232,7 @@ export default function App() {
     .theme-btn { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text); padding: 8px 12px; border-radius: 20px; cursor: pointer; font-size: 16px; transition: 0.2s; }
     .theme-btn:hover { transform: scale(1.05); }
 
-    .header { text-align: center; margin-bottom: 30px; }
+    .header { text-align: center; margin-bottom: 30px; pointer-events: none; }
     .header h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(40px, 10vw, 72px); letter-spacing: 3px; background: linear-gradient(135deg, #f5d078 0%, var(--gold) 50%, #f5d078 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
     
     .theme-light .card, .theme-light .prog-card, .theme-light .total-row, .theme-light .add-section {
@@ -279,12 +307,30 @@ export default function App() {
     
     .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #14161e; border: 1px solid #fff; border-radius: 30px; padding: 10px 22px; color: #fff; font-size: 14px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: slideUp 0.3s ease-out; }
     @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+    /* PIG ANIMATION CLASSES */
+    .floating-pig {
+      position: fixed;
+      font-size: 40px;
+      pointer-events: none; /* So it doesn't block clicks */
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      animation: pigPop 1s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes pigPop {
+      0% { transform: translate(-50%, -50%) scale(0) rotate(-20deg); opacity: 0; }
+      30% { transform: translate(-50%, -100px) scale(1.2) rotate(15deg); opacity: 1; }
+      50% { transform: translate(-50%, -120px) scale(1) rotate(-10deg); opacity: 1; }
+      80% { transform: translate(-50%, -140px) scale(1) rotate(5deg); opacity: 0.8; }
+      100% { transform: translate(-50%, -160px) scale(0.5) rotate(0deg); opacity: 0; }
+    }
   `;
 
   if (!loaded) return <div style={{ color: "#888", textAlign: "center", padding: 80, fontFamily: "sans-serif" }}>Loading Live Data...</div>;
 
   return (
-    <div className={`app-container ${isDarkMode ? 'theme-dark' : 'theme-light'}`}>
+    <div className={`app-container ${isDarkMode ? 'theme-dark' : 'theme-light'}`} onClick={handleBackgroundClick}>
       <style>{styles}</style>
       <div className="bg-orbs"><div className="orb orb1" /><div className="orb orb2" /></div>
 
@@ -308,7 +354,6 @@ export default function App() {
         {/* SYNCED PROGRESS BARS */}
         <div className="progress-list">
           {progressBars.map(bar => {
-            // Using 'total' directly synchronizes it perfectly!
             const percent = Math.min((total / bar.target) * 100, 100);
             return (
               <div key={bar.id} className="prog-card">
@@ -432,6 +477,14 @@ export default function App() {
       )}
       
       {toast && <div className="toast">{toast.msg}</div>}
+
+      {/* RENDER THE PIGS */}
+      {pigs.map(pig => (
+        <div key={pig.id} className="floating-pig" style={{ left: pig.x, top: pig.y }}>
+          🐷
+        </div>
+      ))}
+
       <Analytics />
     </div>
   );
