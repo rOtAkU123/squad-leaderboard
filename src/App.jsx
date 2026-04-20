@@ -31,6 +31,7 @@ function getRankLabel(rank) {
 export default function App() {
   const [players, setPlayers] = useState([]);
   const [progressBars, setProgressBars] = useState([]);
+  const [imageSettings, setImageSettings] = useState({ url: "", width: 100 });
   const [isDarkMode, setIsDarkMode] = useState(true);
   
   const [isAdmin, setIsAdmin] = useState(false);
@@ -45,17 +46,20 @@ export default function App() {
   const [newBarTarget, setNewBarTarget] = useState(33);
   const [barAdjustAmounts, setBarAdjustAmounts] = useState({});
 
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [newImageWidth, setNewImageWidth] = useState(100);
+
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
 
   // Load LIVE from Firebase
   useEffect(() => {
-    // Automatically change the browser tab name!
-    document.title = "john pork123";
+    document.title = "john pork123"; // Changes tab name!
 
     const playersRef = ref(db, 'players');
     const barsRef = ref(db, 'progressBars');
+    const imageRef = ref(db, 'imageSettings');
 
     const unsubPlayers = onValue(playersRef, (snapshot) => {
       if (snapshot.exists()) setPlayers(snapshot.val());
@@ -71,10 +75,19 @@ export default function App() {
         firebaseSet(barsRef, DEFAULT_BARS);
         setProgressBars(DEFAULT_BARS);
       }
+    });
+
+    const unsubImage = onValue(imageRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setImageSettings(data);
+        setNewImageUrl(data.url);
+        setNewImageWidth(data.width);
+      }
       setLoaded(true);
     });
 
-    return () => { unsubPlayers(); unsubBars(); };
+    return () => { unsubPlayers(); unsubBars(); unsubImage(); };
   }, []);
 
   const sorted = [...players].sort((a, b) => b.money - a.money);
@@ -160,6 +173,19 @@ export default function App() {
     firebaseSet(ref(db, 'progressBars'), newBars);
   }
 
+  // --- IMAGE CONTROLS ---
+  function saveImage() {
+    if (!newImageUrl.trim()) return;
+    firebaseSet(ref(db, 'imageSettings'), { url: newImageUrl.trim(), width: parseInt(newImageWidth) });
+    showToast("🖼️ Image saved!");
+  }
+
+  function removeImage() {
+    firebaseSet(ref(db, 'imageSettings'), { url: "", width: 100 });
+    setNewImageUrl("");
+    showToast("🗑️ Image removed");
+  }
+
   const styles = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -167,12 +193,12 @@ export default function App() {
     .theme-dark {
       --bg: #080a0f; --text: #e8eaf0; --text-dim: #5a6070; 
       --card-bg: rgba(255,255,255,0.035); --card-border: rgba(255,255,255,0.07);
-      --input-bg: rgba(255,255,255,0.06); --orb-opacity: 0.18; --gold: #c9a84c;
+      --input-bg: rgba(255,255,255,0.06); --orb-opacity: 0.18; --gold: #c9a84c; --gold-bg: rgba(201,168,76,0.05);
     }
     .theme-light {
       --bg: #f0f2f6; --text: #1a1d24; --text-dim: #6b7280; 
       --card-bg: #ffffff; --card-border: rgba(0,0,0,0.1);
-      --input-bg: rgba(0,0,0,0.05); --orb-opacity: 0.08; --gold: #b38b22;
+      --input-bg: rgba(0,0,0,0.05); --orb-opacity: 0.08; --gold: #b38b22; --gold-bg: rgba(179,139,34,0.1);
     }
 
     body { background: var(--bg); transition: background 0.3s ease; }
@@ -194,6 +220,10 @@ export default function App() {
     .header { text-align: center; margin-bottom: 30px; }
     .header h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(40px, 10vw, 72px); letter-spacing: 3px; background: linear-gradient(135deg, #f5d078 0%, var(--gold) 50%, #f5d078 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
     
+    .total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--gold-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 24px; }
+    .total-label { font-size: 13px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; font-weight: bold; }
+    .total-val { font-family: 'Bebas Neue', sans-serif; font-size: 24px; color: var(--gold); }
+
     .progress-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 30px; }
     .prog-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; }
     .prog-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
@@ -212,21 +242,25 @@ export default function App() {
     
     .admin-controls { display: flex; flex-direction: column; gap: 8px; min-width: 160px; margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 12px; }
     .btn-row { display: flex; gap: 6px; }
-    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; padding: 6px 10px; flex: 1; }
-    .btn-plus { background: rgba(52,200,100,0.15); color: #34c864; }
-    .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; }
-    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 6px 12px; }
+    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; padding: 6px 10px; flex: 1; transition: 0.15s; }
+    .btn:hover { filter: brightness(1.1); }
+    .btn-plus { background: rgba(52,200,100,0.15); color: #34c864; border: 1px solid rgba(52,200,100,0.25); }
+    .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; border: 1px solid rgba(220,60,60,0.25); }
+    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 6px 12px; border: 1px solid rgba(150,50,50,0.25); }
     
     .custom-row { display: flex; gap: 5px; }
-    .amount-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 6px; color: var(--text); outline: none; }
+    .amount-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; color: var(--text); outline: none; }
+    .amount-input:focus { border-color: var(--gold); }
     
     .add-section { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-top: 24px; }
     .add-section h3 { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; color: var(--gold); margin-bottom: 12px; }
     .add-row { display: flex; gap: 10px; margin-bottom: 10px; }
-    .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer; border: none; }
+    .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer; border: none; transition: 0.15s; }
+    .btn-add:hover { transform: scale(0.98); opacity: 0.9; }
     
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--card-border); }
-    .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+    .btn-unlock:hover { background: var(--card-border); color: var(--text); }
     
     .modal-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.75); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; }
     .modal { background: #111318; border: 1px solid var(--gold); border-radius: 20px; padding: 32px; width: 90%; max-width: 360px; color: #fff; }
@@ -248,12 +282,18 @@ export default function App() {
       <div className="wrapper">
         <div className="top-nav">
           <button className="theme-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
-            {isDarkMode ? "☀️ Light" : "🌙 Dark"}
+            {isDarkMode ? "☀️ Light Mode" : "🌙 Dark Mode"}
           </button>
         </div>
 
         <div className="header">
           <h1>john pork123</h1>
+        </div>
+
+        {/* TOTAL POT RESTORED */}
+        <div className="total-row">
+          <span className="total-label">Total Pot</span>
+          <span className="total-val">${total.toFixed(2)}</span>
         </div>
 
         {/* PROGRESS BARS */}
@@ -317,7 +357,18 @@ export default function App() {
           })}
         </div>
 
-        {/* ADMIN ADD PANELS */}
+        {/* PUBLIC IMAGE DISPLAY (Shows for everyone) */}
+        {imageSettings?.url && (
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <img 
+              src={imageSettings.url} 
+              alt="Leaderboard Custom" 
+              style={{ width: `${imageSettings.width}%`, maxWidth: '100%', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }} 
+            />
+          </div>
+        )}
+
+        {/* ADMIN PANELS */}
         {isAdmin && (
           <>
             <div className="add-section">
@@ -334,6 +385,23 @@ export default function App() {
                 <input className="amount-input" placeholder="Bar Title..." value={newBarTitle} onChange={e => setNewBarTitle(e.target.value)} />
                 <input type="number" className="amount-input" style={{flex: 0.5}} placeholder="Target $" value={newBarTarget} onChange={e => setNewBarTarget(e.target.value)} />
                 <button className="btn-add" onClick={addBar}>ADD</button>
+              </div>
+            </div>
+
+            <div className="add-section">
+              <h3>🖼️ Custom Display Image</h3>
+              <div className="add-row">
+                <input className="amount-input" placeholder="Paste Image URL here (e.g., Imgur link)..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
+              </div>
+              <div className="add-row" style={{ alignItems: 'center', marginTop: '10px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text)', width: '70px', fontWeight: 'bold' }}>Size: {newImageWidth}%</span>
+                <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button className="btn-add" style={{ flex: 1 }} onClick={saveImage}>SAVE IMAGE</button>
+                {imageSettings?.url && (
+                  <button className="btn btn-del" style={{ flex: 1, padding: '10px' }} onClick={removeImage}>REMOVE IMG</button>
+                )}
               </div>
             </div>
           </>
