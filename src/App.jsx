@@ -36,7 +36,7 @@ export default function App() {
   const [siteTitle, setSiteTitle] = useState("john pork123");
   const [moneyUsed, setMoneyUsed] = useState(0);
   
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const[isDarkMode, setIsDarkMode] = useState(true);
   const [showPodium, setShowPodium] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false); 
   
@@ -57,7 +57,7 @@ export default function App() {
   const [newTitleInput, setNewTitleInput] = useState("");
   const[usedAmountInput, setUsedAmountInput] = useState("");
 
-  const [loaded, setLoaded] = useState(false);
+  const[loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
 
@@ -115,16 +115,58 @@ export default function App() {
     return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubUsed(); };
   },[]);
 
-  // Confetti Timer Logic for Podium
+  // Confetti & Sound Timer Logic for Podium
   useEffect(() => {
     let timer;
+    let drumAudio;
+    let winAudio;
+    let chimeAudio;
+
     if (showPodium) {
-      // Trigger confetti shortly after the 1st place block finishes animating
-      timer = setTimeout(() => setShowConfetti(true), 3300);
+      // Play drumroll/buildup sound immediately when podium is shown
+      drumAudio = new Audio("https://www.soundjay.com/misc/sounds/drum-roll-1.mp3");
+      drumAudio.volume = 0.7;
+      drumAudio.play().catch(e => console.log("Audio play blocked by browser:", e));
+
+      // Trigger confetti and celebration sound shortly after the 1st place block finishes animating
+      timer = setTimeout(() => {
+        setShowConfetti(true);
+        
+        // Stop drum roll when the winner pops up
+        if (drumAudio) {
+          drumAudio.pause();
+          drumAudio.currentTime = 0;
+        }
+
+        // Play win celebration sounds (Applause + Chime)
+        winAudio = new Audio("https://www.soundjay.com/human/sounds/applause-01.mp3");
+        winAudio.volume = 0.8;
+        winAudio.play().catch(e => console.log("Audio play blocked by browser:", e));
+
+        chimeAudio = new Audio("https://www.soundjay.com/misc/sounds/magic-chime-01.mp3");
+        chimeAudio.volume = 0.6;
+        chimeAudio.play().catch(e => console.log("Audio play blocked by browser:", e));
+      }, 3300);
     } else {
       setShowConfetti(false);
     }
-    return () => clearTimeout(timer);
+    
+    // Cleanup audios when closing podium or unmounting
+    return () => {
+      clearTimeout(timer);
+      if (drumAudio) {
+        drumAudio.pause();
+        drumAudio.currentTime = 0;
+      }
+      if (winAudio) {
+        winAudio.pause();
+        winAudio.currentTime = 0;
+      }
+      if (chimeAudio) {
+        chimeAudio.pause();
+        chimeAudio.currentTime = 0;
+      }
+    };
   }, [showPodium]);
 
   const sorted = [...players].sort((a, b) => b.money - a.money);
