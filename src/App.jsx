@@ -45,7 +45,6 @@ export default function App() {
   
   const [newBarTitle, setNewBarTitle] = useState("");
   const [newBarTarget, setNewBarTarget] = useState(33);
-  const [barAdjustAmounts, setBarAdjustAmounts] = useState({});
 
   const [newImageUrl, setNewImageUrl] = useState("");
   const [newImageWidth, setNewImageWidth] = useState(100);
@@ -92,6 +91,7 @@ export default function App() {
   }, []);
 
   const sorted = [...players].sort((a, b) => b.money - a.money);
+  // Calculate total pot from all players
   const total = players.reduce((s, p) => s + p.money, 0);
 
   function showToast(msg, type = "success") {
@@ -144,20 +144,6 @@ export default function App() {
   }
 
   // --- PROGRESS BAR CONTROLS ---
-  function adjustBarMoney(id, delta) {
-    const newBars = progressBars.map(b => 
-      b.id === id ? { ...b, current: Math.max(0, parseFloat((b.current + delta).toFixed(2))) } : b
-    );
-    firebaseSet(ref(db, 'progressBars'), newBars);
-  }
-
-  function applyCustomBar(id, sign) {
-    const val = parseFloat(barAdjustAmounts[id]);
-    if (isNaN(val) || val <= 0) return;
-    adjustBarMoney(id, sign * val);
-    setBarAdjustAmounts(prev => ({ ...prev, [id]: "" }));
-  }
-
   function addBar() {
     const title = newBarTitle.trim();
     const target = parseFloat(newBarTarget);
@@ -197,9 +183,9 @@ export default function App() {
       --input-bg: rgba(255,255,255,0.06); --orb-opacity: 0.18; --gold: #c9a84c; --gold-bg: rgba(201,168,76,0.05);
     }
     .theme-light {
-      --bg: #f0f2f6; --text: #1a1d24; --text-dim: #6b7280; 
-      --card-bg: #ffffff; --card-border: rgba(0,0,0,0.1);
-      --input-bg: rgba(0,0,0,0.05); --orb-opacity: 0.08; --gold: #b38b22; --gold-bg: rgba(179,139,34,0.1);
+      --bg: #f4f6fa; --text: #0f172a; --text-dim: #64748b; 
+      --card-bg: #ffffff; --card-border: #e2e8f0;
+      --input-bg: #f1f5f9; --orb-opacity: 0.25; --gold: #d97706; --gold-bg: #fef3c7;
     }
 
     body { background: var(--bg); transition: background 0.3s ease; }
@@ -221,21 +207,41 @@ export default function App() {
     .header { text-align: center; margin-bottom: 30px; }
     .header h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(40px, 10vw, 72px); letter-spacing: 3px; background: linear-gradient(135deg, #f5d078 0%, var(--gold) 50%, #f5d078 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
     
-    .total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--gold-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 24px; }
+    .theme-light .card, .theme-light .prog-card, .theme-light .total-row, .theme-light .add-section {
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+
+    .total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--gold-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 24px; transition: transform 0.2s; }
+    .total-row:hover { transform: scale(1.02); }
     .total-label { font-size: 13px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; font-weight: bold; }
-    .total-val { font-family: 'Bebas Neue', sans-serif; font-size: 24px; color: var(--gold); }
+    .total-val { font-family: 'Bebas Neue', sans-serif; font-size: 28px; color: var(--gold); transition: color 0.3s; }
+    .total-row:hover .total-val { color: #f5d078; }
 
     .progress-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 30px; }
     .prog-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; }
     .prog-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
-    .prog-track { background: var(--input-bg); height: 14px; border-radius: 10px; overflow: hidden; }
-    .prog-fill { background: linear-gradient(90deg, var(--gold), #f5d078); height: 100%; transition: width 0.4s ease; }
+    .prog-track { background: var(--input-bg); height: 16px; border-radius: 10px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+    
+    .prog-fill { background: linear-gradient(90deg, var(--gold), #f5d078); height: 100%; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; }
+    .prog-fill::after {
+      content: ''; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+      animation: shimmer 2s infinite;
+    }
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
     
     .board { display: flex; flex-direction: column; gap: 12px; }
-    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; transition: 0.2s; }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; display: flex; align-items: center; gap: 16px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s; }
+    .card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 12px 24px rgba(0,0,0,0.15); border-color: var(--gold); }
     
     .rank-badge { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+    @keyframes wobble {
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(-15deg) scale(1.2); }
+      75% { transform: rotate(15deg) scale(1.2); }
+    }
+    .card:hover .rank-badge { animation: wobble 0.6s ease-in-out infinite; }
+    
     .player-info { flex: 1; }
     .player-name { font-weight: 600; font-size: 17px; }
     .rank-label { font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); }
@@ -244,33 +250,35 @@ export default function App() {
     .admin-controls { display: flex; flex-direction: column; gap: 8px; min-width: 160px; margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 12px; }
     .btn-row { display: flex; gap: 6px; }
     .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; padding: 6px 10px; flex: 1; transition: 0.15s; }
-    .btn:hover { filter: brightness(1.1); }
+    .btn:hover { filter: brightness(1.1); transform: scale(1.05); }
     .btn-plus { background: rgba(52,200,100,0.15); color: #34c864; border: 1px solid rgba(52,200,100,0.25); }
     .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; border: 1px solid rgba(220,60,60,0.25); }
     .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 6px 12px; border: 1px solid rgba(150,50,50,0.25); }
     
     .custom-row { display: flex; gap: 5px; }
-    .amount-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; color: var(--text); outline: none; }
+    .amount-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; color: var(--text); outline: none; transition: border-color 0.2s; }
     .amount-input:focus { border-color: var(--gold); }
     
     .add-section { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-top: 24px; }
     .add-section h3 { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; color: var(--gold); margin-bottom: 12px; }
     .add-row { display: flex; gap: 10px; margin-bottom: 10px; }
     .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer; border: none; transition: 0.15s; }
-    .btn-add:hover { transform: scale(0.98); opacity: 0.9; }
+    .btn-add:hover { transform: scale(0.95); opacity: 0.9; }
     
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--card-border); }
     .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-    .btn-unlock:hover { background: var(--card-border); color: var(--text); }
+    .btn-unlock:hover { background: var(--card-border); color: var(--text); transform: translateY(-2px); }
     
     .modal-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.75); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; }
-    .modal { background: #111318; border: 1px solid var(--gold); border-radius: 20px; padding: 32px; width: 90%; max-width: 360px; color: #fff; }
+    .modal { background: #111318; border: 1px solid var(--gold); border-radius: 20px; padding: 32px; width: 90%; max-width: 360px; color: #fff; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .modal h2 { font-family: 'Bebas Neue'; font-size: 28px; color: var(--gold); margin-bottom: 6px; }
     .pw-input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; color: #fff; margin-bottom: 12px; outline: none; }
     .modal-btns { display: flex; gap: 10px; }
     .btn-confirm { flex: 1; background: var(--gold); color: #000; padding: 12px; border-radius: 10px; font-weight: 700; border: none; cursor: pointer; }
     
-    .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #14161e; border: 1px solid #fff; border-radius: 30px; padding: 10px 22px; color: #fff; font-size: 14px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #14161e; border: 1px solid #fff; border-radius: 30px; padding: 10px 22px; color: #fff; font-size: 14px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: slideUp 0.3s ease-out; }
+    @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
   `;
 
   if (!loaded) return <div style={{ color: "#888", textAlign: "center", padding: 80, fontFamily: "sans-serif" }}>Loading Live Data...</div>;
@@ -293,35 +301,29 @@ export default function App() {
 
         {/* TOTAL POT RESTORED */}
         <div className="total-row">
-          <span className="total-label">Total Pot</span>
+          <span className="total-label">Total Pot 💰</span>
           <span className="total-val">${total.toFixed(2)}</span>
         </div>
 
-        {/* PROGRESS BARS */}
+        {/* SYNCED PROGRESS BARS */}
         <div className="progress-list">
           {progressBars.map(bar => {
-            const percent = Math.min((bar.current / bar.target) * 100, 100);
+            // Using 'total' directly synchronizes it perfectly!
+            const percent = Math.min((total / bar.target) * 100, 100);
             return (
               <div key={bar.id} className="prog-card">
                 <div className="prog-header">
-                  <span>{bar.title}</span>
-                  <span>${bar.current.toFixed(2)} / ${bar.target.toFixed(2)}</span>
+                  <span>{bar.title} 🎯</span>
+                  <span>${total.toFixed(2)} / ${bar.target.toFixed(2)}</span>
                 </div>
                 <div className="prog-track">
                   <div className="prog-fill" style={{ width: `${percent}%` }}></div>
                 </div>
 
                 {isAdmin && (
-                  <div className="admin-controls">
+                  <div className="admin-controls" style={{ marginTop: '16px' }}>
                     <div className="btn-row">
-                      <button className="btn btn-plus" onClick={() => adjustBarMoney(bar.id, 1)}>+$1</button>
-                      <button className="btn btn-minus" onClick={() => adjustBarMoney(bar.id, -1)}>-$1</button>
-                      <button className="btn btn-del" onClick={() => removeBar(bar.id)}>✕ Delete Bar</button>
-                    </div>
-                    <div className="custom-row">
-                      <input type="number" className="amount-input" placeholder="Custom $" value={barAdjustAmounts[bar.id] || ""} onChange={e => setBarAdjustAmounts(prev => ({ ...prev, [bar.id]: e.target.value }))} />
-                      <button className="btn btn-plus" onClick={() => applyCustomBar(bar.id, 1)}>+</button>
-                      <button className="btn btn-minus" onClick={() => applyCustomBar(bar.id, -1)}>−</button>
+                      <button className="btn btn-del" style={{flex: 1}} onClick={() => removeBar(bar.id)}>✕ Delete Bar</button>
                     </div>
                   </div>
                 )}
