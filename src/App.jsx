@@ -38,12 +38,12 @@ export default function App() {
   
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showPodium, setShowPodium] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false); // NEW STATE FOR CONFETTI
+  const [showConfetti, setShowConfetti] = useState(false); 
   
-  const [isAdmin, setIsAdmin] = useState(false);
+  const[isAdmin, setIsAdmin] = useState(false);
   const[showLogin, setShowLogin] = useState(false);
   const [pwInput, setPwInput] = useState("");
-  const [pwError, setPwError] = useState(false);
+  const[pwError, setPwError] = useState(false);
   
   const [newName, setNewName] = useState("");
   const [adjustAmounts, setAdjustAmounts] = useState({});
@@ -55,7 +55,7 @@ export default function App() {
   const[newImageWidth, setNewImageWidth] = useState(100);
 
   const [newTitleInput, setNewTitleInput] = useState("");
-  const [usedAmountInput, setUsedAmountInput] = useState("");
+  const[usedAmountInput, setUsedAmountInput] = useState("");
 
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
@@ -260,12 +260,14 @@ export default function App() {
       --card-bg: rgba(255,255,255,0.035); --card-border: rgba(255,255,255,0.07);
       --input-bg: rgba(255,255,255,0.06); --orb-opacity: 0.18; --gold: #c9a84c; --gold-bg: rgba(201,168,76,0.05);
       --red-bg: rgba(220,60,60,0.08); --red-text: #e05050;
+      --podium-grad-inner: #151823; --podium-grad-outer: #000000;
     }
     .theme-light {
       --bg: #f4f6fa; --text: #0f172a; --text-dim: #64748b; 
       --card-bg: #ffffff; --card-border: #e2e8f0;
       --input-bg: #f1f5f9; --orb-opacity: 0.25; --gold: #d97706; --gold-bg: #fef3c7;
       --red-bg: #fee2e2; --red-text: #dc2626;
+      --podium-grad-inner: #ffffff; --podium-grad-outer: #aeb9cc;
     }
 
     body { background: var(--bg); transition: background 0.3s ease; font-family: 'DM Sans', sans-serif; }
@@ -385,7 +387,7 @@ export default function App() {
     }
 
     /* --- PODIUM KAHOOT STYLE CSS --- */
-    .podium-screen { position: relative; z-index: 10; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: radial-gradient(circle at center, var(--bg) 0%, #000 100%); animation: fadeIn 0.5s ease; overflow: hidden; }
+    .podium-screen { position: relative; z-index: 10; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: radial-gradient(circle at center, var(--podium-grad-inner) 0%, var(--podium-grad-outer) 100%); animation: fadeIn 0.5s ease; overflow: hidden; transition: background 0.3s; }
     .podium-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(50px, 12vw, 90px); color: var(--gold); text-shadow: 0 4px 20px rgba(201, 168, 76, 0.4); margin-bottom: 80px; animation: dropDown 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     @keyframes dropDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
@@ -394,7 +396,7 @@ export default function App() {
     
     .podium-player-info { display: flex; flex-direction: column; align-items: center; opacity: 0; animation: fadeDrop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; margin-bottom: 15px; text-align: center; }
     .podium-emoji { font-size: clamp(35px, 8vw, 55px); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
-    .podium-name { font-weight: 800; font-size: clamp(16px, 4vw, 22px); color: var(--text); margin-top: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    .podium-name { font-weight: 800; font-size: clamp(16px, 4vw, 22px); color: var(--text); margin-top: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
     .podium-money { font-family: 'Bebas Neue'; font-size: clamp(20px, 5vw, 28px); color: var(--gold); }
 
     .podium-block { width: 100%; border-radius: 12px 12px 0 0; display: flex; justify-content: center; padding-top: 15px; font-family: 'Bebas Neue'; font-size: 40px; color: rgba(255,255,255,0.8); box-shadow: inset 0 4px 10px rgba(255,255,255,0.2), 0 10px 30px rgba(0,0,0,0.5); transform-origin: bottom; animation: riseUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transform: scaleY(0); position: relative; overflow: hidden; }
@@ -418,8 +420,8 @@ export default function App() {
     .wrapper-1 .podium-block { animation-delay: 2.6s; }
     .wrapper-1 .podium-player-info { animation-delay: 3.4s; }
 
-    /* 1st Place extra juice animations */
-    .winner-pulse { animation: winnerPulse 1.5s infinite alternate; animation-delay: 4.2s; }
+    /* 1st Place extra juice animations inside the wrapper so it doesn't break opacity! */
+    .winner-pulse-wrapper { display: flex; flex-direction: column; align-items: center; animation: winnerPulse 1.5s infinite alternate; animation-delay: 4.2s; }
     @keyframes winnerPulse {
       0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.5)); }
       100% { transform: scale(1.15); filter: drop-shadow(0 0 30px rgba(201, 168, 76, 1)); }
@@ -437,7 +439,7 @@ export default function App() {
 
     .honorable-mentions { margin-top: 60px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 600px; opacity: 0; animation: slideUpMentions 0.6s forwards; animation-delay: 4.5s; }
     @keyframes slideUpMentions { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-    .mention-chip { background: var(--card-bg); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 20px; font-weight: 600; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s; }
+    .mention-chip { background: var(--card-bg); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 20px; font-weight: 600; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s; color: var(--text); }
     .mention-chip:hover { transform: scale(1.1) translateY(-2px); border-color: var(--gold); }
     .mention-money { color: var(--text-dim); font-size: 14px; }
 
@@ -498,10 +500,12 @@ export default function App() {
             {/* 1ST PLACE */}
             {first && (
               <div className="podium-block-wrapper wrapper-1">
-                <div className="podium-player-info winner-pulse">
-                  <div className="podium-emoji">👑</div>
-                  <div className="podium-name">{first.name}</div>
-                  <div className="podium-money">${first.money.toFixed(2)}</div>
+                <div className="podium-player-info">
+                  <div className="winner-pulse-wrapper">
+                    <div className="podium-emoji">👑</div>
+                    <div className="podium-name">{first.name}</div>
+                    <div className="podium-money">${first.money.toFixed(2)}</div>
+                  </div>
                 </div>
                 <div className="podium-block block-1">1</div>
               </div>
