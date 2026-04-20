@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ref, onValue, set as firebaseSet } from "firebase/database";
+import { Analytics } from "@vercel/analytics/react";
 import { db } from "./firebase"; 
 
 const ADMIN_PASSWORD = "boss2024";
@@ -429,6 +430,7 @@ export default function App() {
       )}
       
       {toast && <div className="toast">{toast.msg}</div>}
+      <Analytics />
     </div>
   );
 }
