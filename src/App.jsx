@@ -74,6 +74,8 @@ export default function App() {
 
   // Upgraded Fidget Elements
   const [clickElements, setClickElements] = useState([]);
+  const [fidgetCount, setFidgetCount] = useState(0);
+  const [isFlipping, setIsFlipping] = useState(false);
 
   // Load LIVE from Firebase
   useEffect(() => {
@@ -239,10 +241,16 @@ export default function App() {
                           e.target.closest('.total-row') ||
                           e.target.closest('.expenses-list') ||
                           e.target.closest('.carousel-wrapper') ||
+                          e.target.closest('.fidget-coin') ||
                           e.target.tagName.toLowerCase() === 'button' || 
                           e.target.tagName.toLowerCase() === 'input';
 
     if (isInteractive) return;
+
+    // Fidget sound effect
+    const popAudio = new Audio("https://www.myinstants.com/media/sounds/pop-sound-effect.mp3");
+    popAudio.volume = 0.2;
+    popAudio.play().catch(()=>{});
 
     // Random Fun Emojis
     const emojis = ['🐷', '💰', '💸', '🚀', '✨', '🔥', '🎉'];
@@ -275,6 +283,26 @@ export default function App() {
     const newExp = expenses.filter(e => e.id !== id);
     firebaseSet(ref(db, 'expenses'), newExp.length ? newExp : { empty: true });
     showToast("🗑️ Expense removed");
+  }
+
+  function downloadBackup() {
+    const backupData = {
+      players,
+      progressBars,
+      images,
+      expenses,
+      h1Title,
+      tabTitle,
+      timestamp: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Website_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("💾 Backup Downloaded Successfully!");
   }
 
   // --- PLAYER CONTROLS ---
@@ -326,7 +354,6 @@ export default function App() {
 
   // --- IMAGE CAROUSEL CONTROLS ---
   
-  // 1. Add Image via URL
   function addImageURL() {
     if (!newImageUrl.trim()) return;
     const newImgs = [...images, { id: Date.now(), url: newImageUrl.trim(), width: parseInt(newImageWidth) }];
@@ -335,7 +362,6 @@ export default function App() {
     showToast("🖼️ URL Image Added!");
   }
 
-  // 2. Add Image via Direct Upload (100% Free Base64 Method)
   function handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -346,9 +372,8 @@ export default function App() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Create an invisible canvas to resize and compress the image
         const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 800; // Keeps database size extremely small
+        const MAX_WIDTH = 800; 
         let width = img.width;
         let height = img.height;
 
@@ -362,16 +387,14 @@ export default function App() {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convert canvas back to a compressed text string (JPEG, 70% quality)
         const base64String = canvas.toDataURL("image/jpeg", 0.7);
 
-        // Save directly to the free Realtime Database
         const newImgs = [...images, { id: Date.now(), url: base64String, width: parseInt(newImageWidth) }];
         firebaseSet(ref(db, 'carouselImages'), newImgs);
 
         showToast("✅ Image Uploaded for Free!");
         setIsUploading(false);
-        e.target.value = null; // Clear the input
+        e.target.value = null; 
       };
       img.src = event.target.result;
     };
@@ -383,6 +406,20 @@ export default function App() {
     firebaseSet(ref(db, 'carouselImages'), newImgs.length ? newImgs : { empty: true });
     setCurrentImgIndex(0); 
     showToast("🗑️ Image removed");
+  }
+
+  function updateImageWidth(id, newWidth) {
+    const newImgs = images.map(img => img.id === id ? { ...img, width: parseInt(newWidth) } : img);
+    firebaseSet(ref(db, 'carouselImages'), newImgs);
+  }
+
+  function moveImage(index, direction) {
+    if (index + direction < 0 || index + direction >= images.length) return;
+    const newImgs = [...images];
+    const temp = newImgs[index];
+    newImgs[index] = newImgs[index + direction];
+    newImgs[index + direction] = temp;
+    firebaseSet(ref(db, 'carouselImages'), newImgs);
   }
 
   function nextImage() {
@@ -636,6 +673,26 @@ export default function App() {
       }
     }
 
+    /* --- NEW FIDGET COIN CSS --- */
+    .fidget-coin {
+      position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px;
+      background: var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 32px; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,0.3); z-index: 50; transition: transform 0.1s;
+      user-select: none; border: 2px solid #fff;
+    }
+    .fidget-coin:active { transform: scale(0.85); }
+    .fidget-coin.flip { animation: coinFlip 0.5s ease-in-out; }
+    @keyframes coinFlip {
+      0% { transform: rotateY(0deg) scale(1); }
+      50% { transform: rotateY(180deg) scale(1.3); }
+      100% { transform: rotateY(360deg) scale(1); }
+    }
+    .fidget-counter {
+      position: absolute; top: -8px; right: -8px; background: var(--red-text); color: white;
+      font-size: 13px; font-weight: bold; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid var(--bg);
+    }
+
     /* --- PODIUM KAHOOT STYLE CSS --- */
     .podium-screen { position: relative;
     z-index: 10; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;
@@ -744,6 +801,7 @@ export default function App() {
       .money { font-size: 22px; }
       .btn-del { flex: 1; padding: 10px 12px; }
       .carousel-wrapper { margin-top: 25px; }
+      .fidget-coin { bottom: 15px; right: 15px; width: 50px; height: 50px; font-size: 26px; }
     }
   `;
 
@@ -897,7 +955,7 @@ export default function App() {
                     <span>{bar.title} 🎯</span>
                     <span>${grossTotal.toFixed(2)} / ${bar.target.toFixed(2)}</span>
                   </div>
- 
+
                   <div className="prog-track">
                     <div className="prog-fill" style={{ width: `${percent}%` }}></div>
                   </div>
@@ -969,6 +1027,11 @@ export default function App() {
                   <input className="amount-input" placeholder="Browser Tab Name..." value={newTabInput} onChange={e => setNewTabInput(e.target.value)} />
                 </div>
                 <button className="btn-add" style={{ marginTop: '12px', width: '100%' }} onClick={saveTitles}>SAVE TITLES</button>
+                
+                {/* NEW BACKUP BUTTON */}
+                <div className="add-row" style={{ marginTop: '12px' }}>
+                  <button className="btn-add" style={{ width: '100%', background: '#1a4fc4', color: '#fff' }} onClick={downloadBackup}>💾 DOWNLOAD DATA BACKUP</button>
+                </div>
         
                 <div className="add-row" style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--card-border)' }}>
                   <input className="amount-input" style={{flex: 1}} placeholder="Expense Info (e.g. Pizza)..." value={expenseDescInput} onChange={e => setExpenseDescInput(e.target.value)} />
@@ -1018,14 +1081,26 @@ export default function App() {
                   <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
                 </div>
                 
+                {/* UPGRADED IMAGE CONTROLS: Size + Order Options */}
                 {images.length > 0 && (
-                  <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {images.map((img, i) => (
-                      <div key={img.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--input-bg)', padding: '10px', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
-                        <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
-                          Img {i + 1}: {img.url.startsWith('data:image') ? 'Uploaded Local File' : img.url.substring(0, 30) + '...'}
-                        </span>
-                        <button className="btn btn-del" style={{ padding: '6px 12px', flex: 0 }} onClick={() => removeImage(img.id)}>✕</button>
+                      <div key={img.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--input-bg)', padding: '12px', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
+                            Img {i + 1}: {img.url.startsWith('data:image') ? 'Uploaded Local File' : img.url.substring(0, 20) + '...'}
+                          </span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button className="btn" style={{ padding: '6px 10px', fontSize: '12px', background: 'var(--card-bg)' }} onClick={() => moveImage(i, -1)} disabled={i === 0}>↑</button>
+                            <button className="btn" style={{ padding: '6px 10px', fontSize: '12px', background: 'var(--card-bg)' }} onClick={() => moveImage(i, 1)} disabled={i === images.length - 1}>↓</button>
+                            <button className="btn btn-del" style={{ padding: '6px 10px' }} onClick={() => removeImage(img.id)}>✕</button>
+                          </div>
+                        </div>
+                        {/* Independent Slider for Existing Images */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold', width: '60px' }}>Size: {img.width}%</span>
+                          <input type="range" min="10" max="100" value={img.width || 100} onChange={e => updateImageWidth(img.id, e.target.value)} style={{ flex: 1 }} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1064,6 +1139,21 @@ export default function App() {
           {el.emoji}
         </div>
       ))}
+
+      {/* NEW FIDGET COIN */}
+      {!showPodium && (
+        <div className={`fidget-coin ${isFlipping ? 'flip' : ''}`} onClick={() => {
+          setFidgetCount(c => c + 1);
+          setIsFlipping(true);
+          setTimeout(() => setIsFlipping(false), 500);
+          const coinSound = new Audio("https://www.myinstants.com/media/sounds/mario-coin.mp3");
+          coinSound.volume = 0.3;
+          coinSound.play().catch(()=>{});
+        }}>
+          🪙
+          {fidgetCount > 0 && <span className="fidget-counter">{fidgetCount}</span>}
+        </div>
+      )}
 
       <Analytics />
     </div>
