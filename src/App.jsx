@@ -31,11 +31,14 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [progressBars, setProgressBars] = useState([]);
   
-  // NEW: Multiple Images State
+  // Multiple Images State
   const [images, setImages] = useState([]);
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
 
-  // NEW: Separated Titles
+  // File Upload State
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Separated Titles
   const [h1Title, setH1Title] = useState("john pork123");
   const [tabTitle, setTabTitle] = useState("john pork123");
   
@@ -225,7 +228,7 @@ export default function App() {
     }
   }
 
-  // Upgraded Background Click Logic
+  // Background Click Logic
   function handleBackgroundClick(e) {
     const isInteractive = e.target.closest('.card') || 
                           e.target.closest('.prog-card') || 
@@ -322,18 +325,62 @@ export default function App() {
   }
 
   // --- IMAGE CAROUSEL CONTROLS ---
-  function addImage() {
+  
+  // 1. Add Image via URL
+  function addImageURL() {
     if (!newImageUrl.trim()) return;
     const newImgs = [...images, { id: Date.now(), url: newImageUrl.trim(), width: parseInt(newImageWidth) }];
     firebaseSet(ref(db, 'carouselImages'), newImgs);
     setNewImageUrl("");
-    showToast("🖼️ Image Added!");
+    showToast("🖼️ URL Image Added!");
+  }
+
+  // 2. Add Image via Direct Upload (100% Free Base64 Method)
+  function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Create an invisible canvas to resize and compress the image
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 800; // Keeps database size extremely small
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = height * (MAX_WIDTH / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert canvas back to a compressed text string (JPEG, 70% quality)
+        const base64String = canvas.toDataURL("image/jpeg", 0.7);
+
+        // Save directly to the free Realtime Database
+        const newImgs = [...images, { id: Date.now(), url: base64String, width: parseInt(newImageWidth) }];
+        firebaseSet(ref(db, 'carouselImages'), newImgs);
+
+        showToast("✅ Image Uploaded for Free!");
+        setIsUploading(false);
+        e.target.value = null; // Clear the input
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   function removeImage(id) {
     const newImgs = images.filter(x => x.id !== id);
     firebaseSet(ref(db, 'carouselImages'), newImgs.length ? newImgs : { empty: true });
-    // Reset index to avoid breaking if current image is deleted
     setCurrentImgIndex(0); 
     showToast("🗑️ Image removed");
   }
@@ -539,6 +586,11 @@ export default function App() {
     .carousel-img.active { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; z-index: 2;}
     .carousel-hint { position: absolute; bottom: -30px; font-size: 12px; color: var(--text-dim); opacity: 0; transition: 0.3s; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;}
     .carousel-wrapper:hover .carousel-hint { opacity: 1; bottom: -25px; }
+    
+    .file-input-wrapper { flex: 1; background: var(--input-bg); border: 1px dashed var(--card-border); padding: 15px; border-radius: 8px; text-align: center; position: relative; overflow: hidden; cursor: pointer; transition: 0.2s; }
+    .file-input-wrapper:hover { border-color: var(--gold); background: var(--gold-bg); }
+    .file-input-wrapper input[type="file"] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+    .file-input-text { color: var(--text); font-size: 15px; font-weight: bold; pointer-events: none; }
 
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px;
     border-top: 1px solid var(--card-border); }
@@ -890,7 +942,7 @@ export default function App() {
             })}
           </div>
 
-          {/* NEW MULTIPLE IMAGES CAROUSEL */}
+          {/* CAROUSEL IMAGES */}
           {images.length > 0 && (
             <div className="carousel-wrapper" onClick={nextImage}>
               {images.map((img, idx) => (
@@ -944,21 +996,34 @@ export default function App() {
 
               <div className="add-section">
                 <h3>🖼️ Carousel Images</h3>
+                
+                {/* Image URL Option */}
                 <div className="add-row">
                   <input className="amount-input" placeholder="Paste Image URL here..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
+                  <button className="btn-add" onClick={addImageURL}>ADD URL</button>
                 </div>
-                <div className="add-row" style={{ alignItems: 'center', marginTop: '10px' }}>
+
+                <div style={{ textAlign: 'center', margin: '12px 0', fontSize: '13px', color: 'var(--text-dim)', fontWeight: 'bold' }}>— OR —</div>
+
+                {/* Free Device Upload via Base64 */}
+                <div className="add-row">
+                  <div className="file-input-wrapper">
+                    <span className="file-input-text">{isUploading ? '⚙️ Compressing & Saving...' : '📁 Click to Upload Free from Device'}</span>
+                    <input type="file" accept="image/*" onChange={handleFileUpload} disabled={isUploading} />
+                  </div>
+                </div>
+
+                <div className="add-row" style={{ alignItems: 'center', marginTop: '15px', paddingTop: '10px', borderTop: '1px dashed var(--card-border)' }}>
                   <span style={{ fontSize: '13px', color: 'var(--text)', width: '70px', fontWeight: 'bold' }}>Size: {newImageWidth}%</span>
                   <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
                 </div>
-                <button className="btn-add" style={{ marginTop: '12px', width: '100%' }} onClick={addImage}>ADD TO CAROUSEL</button>
                 
                 {images.length > 0 && (
                   <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {images.map((img, i) => (
                       <div key={img.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--input-bg)', padding: '10px', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
                         <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
-                          Img {i + 1}: {img.url.substring(0, 30)}...
+                          Img {i + 1}: {img.url.startsWith('data:image') ? 'Uploaded Local File' : img.url.substring(0, 30) + '...'}
                         </span>
                         <button className="btn btn-del" style={{ padding: '6px 12px', flex: 0 }} onClick={() => removeImage(img.id)}>✕</button>
                       </div>
