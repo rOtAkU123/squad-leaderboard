@@ -31,9 +31,14 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [progressBars, setProgressBars] = useState([]);
   
-  // Multiple Images State
+  // Multiple Images State (Admin)
   const [images, setImages] = useState([]);
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
+
+  // Community Images State
+  const [communityImages, setCommunityImages] = useState([]);
+  const [isCommunityUploading, setIsCommunityUploading] = useState(false);
+  const [newCommImageWidth, setNewCommImageWidth] = useState(100);
 
   // File Upload State
   const [isUploading, setIsUploading] = useState(false);
@@ -86,6 +91,7 @@ export default function App() {
     const playersRef = ref(db, 'players');
     const barsRef = ref(db, 'progressBars');
     const imagesRef = ref(db, 'carouselImages');
+    const commImagesRef = ref(db, 'communityImages');
     const h1Ref = ref(db, 'h1Title');
     const tabRef = ref(db, 'tabTitle');
     const expensesRef = ref(db, 'expenses');
@@ -116,6 +122,16 @@ export default function App() {
         else setImages(Array.isArray(val) ? val : Object.values(val));
       } else {
         setImages([]);
+      }
+    });
+
+    const unsubCommImages = onValue(commImagesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (val.empty) setCommunityImages([]);
+        else setCommunityImages(Array.isArray(val) ? val : Object.values(val));
+      } else {
+        setCommunityImages([]);
       }
     });
 
@@ -150,7 +166,15 @@ export default function App() {
       setLoaded(true);
     });
 
-    return () => { unsubPlayers(); unsubBars(); unsubImages(); unsubH1(); unsubTab(); unsubExpenses(); };
+    return () => { 
+      unsubPlayers(); 
+      unsubBars(); 
+      unsubImages(); 
+      unsubCommImages(); 
+      unsubH1(); 
+      unsubTab(); 
+      unsubExpenses(); 
+    };
   }, []);
 
   // Cleanup for hold interval when component unmounts
@@ -264,6 +288,7 @@ export default function App() {
                           e.target.closest('.total-row') ||
                           e.target.closest('.expenses-list') ||
                           e.target.closest('.carousel-wrapper') ||
+                          e.target.closest('.community-section') ||
                           e.target.closest('.fidget-coin') ||
                           e.target.tagName.toLowerCase() === 'button' || 
                           e.target.tagName.toLowerCase() === 'input';
@@ -330,6 +355,7 @@ export default function App() {
       players,
       progressBars,
       images,
+      communityImages,
       expenses,
       h1Title,
       tabTitle,
@@ -392,7 +418,7 @@ export default function App() {
     firebaseSet(ref(db, 'progressBars'), newBars.length ? newBars : { empty: true });
   }
 
-  // --- IMAGE CAROUSEL CONTROLS ---
+  // --- ADMIN IMAGE CAROUSEL CONTROLS ---
   
   function addImageURL() {
     if (!newImageUrl.trim()) return;
@@ -466,6 +492,58 @@ export default function App() {
     if (images.length > 1) {
       setCurrentImgIndex((prev) => (prev + 1) % images.length);
     }
+  }
+
+  // --- COMMUNITY IMAGE CONTROLS ---
+
+  function handleCommunityFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsCommunityUploading(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 800; 
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = height * (MAX_WIDTH / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const base64String = canvas.toDataURL("image/jpeg", 0.7);
+
+        const newImgs = [...communityImages, { id: Date.now(), url: base64String, width: parseInt(newCommImageWidth) }];
+        firebaseSet(ref(db, 'communityImages'), newImgs);
+
+        showToast("🌟 Community Image Shared!");
+        setIsCommunityUploading(false);
+        e.target.value = null; 
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function updateCommunityImageWidth(id, newWidth) {
+    const newImgs = communityImages.map(img => img.id === id ? { ...img, width: parseInt(newWidth) } : img);
+    firebaseSet(ref(db, 'communityImages'), newImgs);
+  }
+
+  function removeCommunityImage(id) {
+    const newImgs = communityImages.filter(x => x.id !== id);
+    firebaseSet(ref(db, 'communityImages'), newImgs.length ? newImgs : { empty: true });
+    showToast("🗑️ Community Image removed");
   }
 
   const styles = `
@@ -552,7 +630,7 @@ export default function App() {
     background: linear-gradient(135deg, #f5d078 0%, var(--gold) 50%, #f5d078 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;
     }
     
-    .theme-light .card, .theme-light .prog-card, .theme-light .total-row, .theme-light .add-section {
+    .theme-light .card, .theme-light .prog-card, .theme-light .total-row, .theme-light .add-section, .theme-light .community-section {
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     }
 
@@ -848,7 +926,7 @@ export default function App() {
     @media (max-width: 600px) {
       .wrapper { padding: 20px 15px; }
       .header h1 { font-size: clamp(32px, 12vw, 50px); margin-bottom: 20px; }
-      .card, .prog-card, .add-section { padding: 15px; }
+      .card, .prog-card, .add-section, .community-section { padding: 15px; }
       .btn-row, .custom-row, .add-row { flex-direction: column; width: 100%; }
       .amount-input, .pw-input, .btn, .btn-add { width: 100%; flex: 1; min-width: 100%; }
       .money { font-size: 22px; }
@@ -1059,7 +1137,7 @@ export default function App() {
             })}
           </div>
 
-          {/* CAROUSEL IMAGES */}
+          {/* ADMIN CAROUSEL IMAGES */}
           {images.length > 0 && (
             <div className="carousel-wrapper" onClick={nextImage}>
               {images.map((img, idx) => (
@@ -1075,6 +1153,49 @@ export default function App() {
             </div>
           )}
 
+          {/* --- NEW COMMUNITY AREA (VISIBLE TO EVERYONE) --- */}
+          <div className="community-section" style={{ marginTop: '40px', padding: '20px', background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)' }}>
+            <h3 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '24px', color: 'var(--gold)', marginBottom: '16px', textAlign: 'center' }}>🌟 Community Board</h3>
+            
+            {/* Public Upload Input */}
+            <div className="add-row">
+              <div className="file-input-wrapper">
+                <span className="file-input-text">{isCommunityUploading ? '⚙️ Uploading...' : '📁 Share a Photo!'}</span>
+                <input type="file" accept="image/*" onChange={handleCommunityFileUpload} disabled={isCommunityUploading} />
+              </div>
+            </div>
+            
+            <div className="add-row" style={{ alignItems: 'center', marginTop: '10px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Default Size: {newCommImageWidth}%</span>
+              <input type="range" min="10" max="100" value={newCommImageWidth} onChange={e => setNewCommImageWidth(e.target.value)} style={{ flex: 1 }} />
+            </div>
+
+            {/* Display the Community Images */}
+            {communityImages.length > 0 && (
+              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
+                {communityImages.map((img) => (
+                  <div key={img.id} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--input-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+                    <img 
+                      src={img.url} 
+                      alt="Community Shared" 
+                      style={{ width: `${img.width}%`, borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
+                    />
+                    
+                    {/* Controls (Public Resizing, Admin Deleting) */}
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '10px', marginTop: '12px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Size:</span>
+                      <input type="range" min="10" max="100" value={img.width || 100} onChange={e => updateCommunityImageWidth(img.id, e.target.value)} style={{ flex: 1 }} />
+                      
+                      {isAdmin && (
+                        <button className="btn btn-del" style={{ padding: '6px 10px', flex: 0 }} onClick={() => removeCommunityImage(img.id)}>✕ Delete</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {isAdmin && (
             <>
               <div className="add-section">
@@ -1087,7 +1208,7 @@ export default function App() {
                 </div>
                 <button className="btn-add" style={{ marginTop: '12px', width: '100%' }} onClick={saveTitles}>SAVE TITLES</button>
                 
-                {/* NEW BACKUP BUTTON */}
+                {/* BACKUP BUTTON */}
                 <div className="add-row" style={{ marginTop: '12px' }}>
                   <button className="btn-add" style={{ width: '100%', background: '#1a4fc4', color: '#fff' }} onClick={downloadBackup}>💾 DOWNLOAD DATA BACKUP</button>
                 </div>
@@ -1117,7 +1238,7 @@ export default function App() {
               </div>
 
               <div className="add-section">
-                <h3>🖼️ Carousel Images</h3>
+                <h3>🖼️ Admin Carousel Images</h3>
                 
                 {/* Image URL Option */}
                 <div className="add-row">
@@ -1140,7 +1261,7 @@ export default function App() {
                   <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
                 </div>
                 
-                {/* UPGRADED IMAGE CONTROLS: Size + Order Options */}
+                {/* IMAGE CONTROLS: Size + Order Options */}
                 {images.length > 0 && (
                   <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {images.map((img, i) => (
