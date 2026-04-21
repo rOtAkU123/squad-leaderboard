@@ -1,7 +1,27 @@
 import { useState, useEffect, useRef } from "react";
-import { ref, onValue, set as firebaseSet } from "firebase/database";
-import { Analytics } from "@vercel/analytics/react";
-import { db } from "./firebase"; 
+
+// IMPORTANT: Uncomment the next three lines for your live website. They are mocked below for the preview environment.
+// import { ref, onValue, set as firebaseSet } from "firebase/database";
+// import { Analytics } from "@vercel/analytics/react";
+// import { db } from "./firebase"; 
+
+// --- MOCK FIREBASE AND ANALYTICS FOR PREVIEW ---
+const db = {}; 
+const mockStorage = {};
+const listeners = {};
+const ref = (db, path) => path;
+const onValue = (path, callback) => {
+  if (!listeners[path]) listeners[path] = [];
+  listeners[path].push(callback);
+  callback({ exists: () => mockStorage[path] !== undefined, val: () => mockStorage[path] });
+  return () => { listeners[path] = listeners[path].filter(cb => cb !== callback); };
+};
+const firebaseSet = (path, val) => {
+  mockStorage[path] = val;
+  if (listeners[path]) listeners[path].forEach(cb => cb({ exists: () => true, val: () => val }));
+};
+const Analytics = () => null;
+// -----------------------------------------------
 
 const ADMIN_PASSWORD = "boss2024";
 const DEFAULT_PLAYERS =[
@@ -30,10 +50,19 @@ function getRankLabel(rank) {
 export default function App() {
   const [players, setPlayers] = useState([]);
   const [progressBars, setProgressBars] = useState([]);
-  const [imageSettings, setImageSettings] = useState({ url: "", width: 100 });
-  const [siteTitle, setSiteTitle] = useState("john pork123");
   
-  // New Expense States
+  const [siteTitle, setSiteTitle] = useState("john pork123");
+  const [tabTitle, setTabTitle] = useState("john pork123");
+  const [newSiteTitleInput, setNewSiteTitleInput] = useState("");
+  const [newTabTitleInput, setNewTabTitleInput] = useState("");
+
+  const [images, setImages] = useState([]);
+  const [tempImageWidth, setTempImageWidth] = useState(100);
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  
+  // Expenses States
   const [expenses, setExpenses] = useState([]);
   const [showExpenses, setShowExpenses] = useState(false);
   const [expenseDescInput, setExpenseDescInput] = useState("");
@@ -51,15 +80,12 @@ export default function App() {
   
   const [newBarTitle, setNewBarTitle] = useState("");
   const [newBarTarget, setNewBarTarget] = useState(33);
-  const [newImageUrl, setNewImageUrl] = useState("");
-  const [newImageWidth, setNewImageWidth] = useState(100);
 
-  const [newTitleInput, setNewTitleInput] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
 
-  const [pigs, setPigs] = useState([]);
+  const [clickEffects, setClickEffects] = useState([]);
 
   // Load LIVE from Firebase
   useEffect(() => {
@@ -67,6 +93,7 @@ export default function App() {
     const barsRef = ref(db, 'progressBars');
     const imageRef = ref(db, 'imageSettings');
     const titleRef = ref(db, 'siteTitle');
+    const tabRef = ref(db, 'tabTitle');
     const expensesRef = ref(db, 'expenses');
 
     const unsubPlayers = onValue(playersRef, (snapshot) => {
@@ -80,7 +107,7 @@ export default function App() {
     const unsubBars = onValue(barsRef, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.val();
-        if (val.empty) setProgressBars([]); // Fix for empty array deletion bug
+        if (val.empty) setProgressBars([]);
         else setProgressBars(Array.isArray(val) ? val : Object.values(val));
       } else {
         firebaseSet(barsRef, DEFAULT_BARS);
@@ -91,19 +118,38 @@ export default function App() {
     const unsubImage = onValue(imageRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        setImageSettings(data);
-        setNewImageUrl(data.url);
-        setNewImageWidth(data.width);
+        setTempImageWidth(data.width || 100);
+        
+        // Migration support for old single image format
+        if (data.list) {
+          setImages(data.list);
+        } else if (data.url) {
+          setImages([{ id: Date.now(), url: data.url }]);
+        } else {
+          setImages([]);
+        }
+      } else {
+        setImages([]);
       }
     });
 
     const unsubTitle = onValue(titleRef, (snapshot) => {
       if (snapshot.exists()) {
         setSiteTitle(snapshot.val());
-        setNewTitleInput(snapshot.val());
-        document.title = snapshot.val(); 
+        setNewSiteTitleInput(snapshot.val());
       } else {
         firebaseSet(titleRef, "john pork123");
+      }
+    });
+
+    const unsubTabTitle = onValue(tabRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setTabTitle(snapshot.val());
+        setNewTabTitleInput(snapshot.val());
+        document.title = snapshot.val(); 
+      } else {
+        firebaseSet(tabRef, "john pork123");
+        document.title = "john pork123";
       }
     });
 
@@ -118,8 +164,15 @@ export default function App() {
       setLoaded(true);
     });
 
-    return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubExpenses(); };
+    return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubTabTitle(); unsubExpenses(); };
   }, []);
+
+  // Correct index if an image is deleted
+  useEffect(() => {
+    if (images.length > 0 && currentImageIndex >= images.length) {
+      setCurrentImageIndex(Math.max(0, images.length - 1));
+    }
+  }, [images, currentImageIndex]);
 
   // Confetti & Sound Timer Logic for Podium
   useEffect(() => {
@@ -135,7 +188,6 @@ export default function App() {
 
       timer = setTimeout(() => {
         setShowConfetti(true);
-        
         if (drumAudio) {
           drumAudio.pause();
           drumAudio.currentTime = 0;
@@ -155,18 +207,9 @@ export default function App() {
     
     return () => {
       clearTimeout(timer);
-      if (drumAudio) {
-        drumAudio.pause();
-        drumAudio.currentTime = 0;
-      }
-      if (winAudio) {
-        winAudio.pause();
-        winAudio.currentTime = 0;
-      }
-      if (chimeAudio) {
-        chimeAudio.pause();
-        chimeAudio.currentTime = 0;
-      }
+      if (drumAudio) { drumAudio.pause(); drumAudio.currentTime = 0; }
+      if (winAudio) { winAudio.pause(); winAudio.currentTime = 0; }
+      if (chimeAudio) { chimeAudio.pause(); chimeAudio.currentTime = 0; }
     };
   }, [showPodium]);
 
@@ -202,6 +245,7 @@ export default function App() {
     }
   }
 
+  // Fidget: Interactive Background Click
   function handleBackgroundClick(e) {
     const isInteractive = e.target.closest('.card') || 
                           e.target.closest('.prog-card') || 
@@ -211,20 +255,39 @@ export default function App() {
                           e.target.closest('.theme-btn') || 
                           e.target.closest('.total-row') ||
                           e.target.closest('.expenses-list') ||
+                          e.target.closest('.carousel-container') ||
                           e.target.tagName.toLowerCase() === 'button' || 
                           e.target.tagName.toLowerCase() === 'input';
 
     if (isInteractive) return;
-    const newPig = { id: Date.now(), x: e.clientX, y: e.clientY };
-    setPigs(prev => [...prev, newPig]);
-    setTimeout(() => { setPigs(prev => prev.filter(p => p.id !== newPig.id)); }, 1000);
+
+    // Fidget Burst Effect
+    const emojis = ["🐷", "💸", "🪙", "✨", "📈", "💎"];
+    const numParticles = Math.floor(Math.random() * 3) + 2; // spawn 2 to 4 particles
+    
+    const newParticles = Array.from({ length: numParticles }).map((_, i) => {
+      const offsetX = (Math.random() - 0.5) * 80;
+      const offsetY = (Math.random() - 0.5) * 80;
+      return {
+        id: Date.now() + i,
+        x: e.clientX + offsetX,
+        y: e.clientY + offsetY,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        rotation: (Math.random() - 0.5) * 60 // random rotation degree
+      };
+    });
+
+    setClickEffects(prev => [...prev, ...newParticles]);
+    setTimeout(() => { 
+      setClickEffects(prev => prev.filter(p => !newParticles.find(np => np.id === p.id))); 
+    }, 1000);
   }
 
   // --- ADMIN SETTINGS CONTROLS ---
-  function saveTitle() {
-    if (!newTitleInput.trim()) return;
-    firebaseSet(ref(db, 'siteTitle'), newTitleInput.trim());
-    showToast("📝 Title Updated");
+  function saveTitles() {
+    if (newSiteTitleInput.trim()) firebaseSet(ref(db, 'siteTitle'), newSiteTitleInput.trim());
+    if (newTabTitleInput.trim()) firebaseSet(ref(db, 'tabTitle'), newTabTitleInput.trim());
+    showToast("📝 Titles Updated");
   }
 
   function addExpense() {
@@ -240,9 +303,33 @@ export default function App() {
 
   function removeExpense(id) {
     const newExp = expenses.filter(e => e.id !== id);
-    // Passing { empty: true } when empty fixes the bug where Firebase deletes the node
     firebaseSet(ref(db, 'expenses'), newExp.length ? newExp : { empty: true });
     showToast("🗑️ Expense removed");
+  }
+
+  function exportData() {
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      players,
+      progressBars,
+      expenses,
+      siteTitle,
+      tabTitle,
+      images,
+      imageWidth: tempImageWidth
+    };
+    
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Leaderboard_Backup_${new Date().toLocaleDateString().replace(/\//g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast("💾 Backup Downloaded!");
   }
 
   // --- PLAYER CONTROLS ---
@@ -293,16 +380,32 @@ export default function App() {
   }
 
   // --- IMAGE CONTROLS ---
-  function saveImage() {
+  function addImage() {
     if (!newImageUrl.trim()) return;
-    firebaseSet(ref(db, 'imageSettings'), { url: newImageUrl.trim(), width: parseInt(newImageWidth) });
-    showToast("🖼️ Image saved!");
+    const newList = [...images, { id: Date.now(), url: newImageUrl.trim() }];
+    firebaseSet(ref(db, 'imageSettings'), { list: newList, width: parseInt(tempImageWidth) });
+    setNewImageUrl("");
+    showToast("🖼️ Image added!");
   }
 
-  function removeImage() {
-    firebaseSet(ref(db, 'imageSettings'), { url: "", width: 100 });
-    setNewImageUrl("");
+  function removeImage(id) {
+    const newList = images.filter(img => img.id !== id);
+    firebaseSet(ref(db, 'imageSettings'), { list: newList, width: parseInt(tempImageWidth) });
     showToast("🗑️ Image removed");
+  }
+
+  function saveImageWidth() {
+    firebaseSet(ref(db, 'imageSettings'), { list: images, width: parseInt(tempImageWidth) });
+    showToast("📏 Image Size Saved");
+  }
+
+  function nextImage() {
+    if (images.length <= 1 || isAnimating) return;
+    setIsAnimating(true);
+    setTimeout(() => {
+      setCurrentImageIndex(prev => (prev + 1) % images.length);
+      setTimeout(() => setIsAnimating(false), 50);
+    }, 250);
   }
 
   const styles = `
@@ -328,7 +431,7 @@ export default function App() {
       --podium-grad-inner: #ffffff; --podium-grad-outer: #aeb9cc;
     }
 
-    body { background: var(--bg); transition: background 0.3s ease; font-family: 'DM Sans', sans-serif; }
+    body { background: var(--bg); transition: background 0.3s ease; font-family: 'DM Sans', sans-serif; perspective: 1000px; }
     
     .app-container { min-height: 100vh; background: var(--bg); color: var(--text); overflow-x: hidden; position: relative;
     transition: all 0.3s ease; padding-bottom: 80px; }
@@ -350,7 +453,7 @@ export default function App() {
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0);
     } }
 
-    .top-nav { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px;
+    .top-nav { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
     }
     .theme-btn { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text); padding: 8px 16px; border-radius: 20px;
     cursor: pointer; font-size: 14px; font-weight: 600; transition: 0.2s; display: flex; align-items: center; gap: 6px;
@@ -362,12 +465,9 @@ export default function App() {
     }
     
     @keyframes pulse-podium {
-       0% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.5);
-       }
-       70% { box-shadow: 0 0 0 12px rgba(201, 168, 76, 0);
-       }
-       100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0);
-       }
+       0% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.5); }
+       70% { box-shadow: 0 0 0 12px rgba(201, 168, 76, 0); }
+       100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0); }
     }
 
     .header { text-align: center; margin-bottom: 30px; pointer-events: none;
@@ -383,37 +483,39 @@ export default function App() {
     .stats-container { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px;
     }
     .total-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border: 1px solid var(--card-border);
-    border-radius: 12px; transition: transform 0.2s; }
-    .total-row:hover { transform: scale(1.01);
+    border-radius: 12px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    
+    /* 3D FIDGET HOVER EFFECT */
+    .total-row:hover, .prog-card:hover { 
+      transform: translateY(-3px) scale(1.01) perspective(1000px) rotateX(2deg); 
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
     }
+    
     .total-label { font-size: 13px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: flex; align-items: center; gap: 8px;
     }
     .total-val { font-family: 'Bebas Neue', sans-serif; font-size: 28px; transition: color 0.3s;
     }
     
-    .row-pot { background: var(--gold-bg); border-color: var(--gold);
-    }
+    .row-pot { background: var(--gold-bg); border-color: var(--gold); }
     .row-pot .total-val { color: var(--gold); }
     
-    .row-net { background: var(--green-bg); border-color: var(--green-text); 
-    }
+    .row-net { background: var(--green-bg); border-color: var(--green-text); }
     .row-net .total-val { color: var(--green-text); }
     
-    .row-used { background: var(--red-bg); cursor: pointer; border-color: transparent;
-    }
+    .row-used { background: var(--red-bg); cursor: pointer; border-color: transparent; }
     .row-used:hover { border-color: var(--red-text); }
     .row-used .total-val { color: var(--red-text); }
 
     .expenses-list { padding: 12px 20px; background: var(--card-bg); border: 1px solid var(--card-border); border-top: none; border-radius: 0 0 12px 12px; margin-top: -12px; margin-bottom: 10px; }
     .expense-item { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; padding-bottom: 8px; border-bottom: 1px dashed var(--card-border); }
     .expense-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-    .expense-desc { color: var(--text); font-weight: 500; font-size: 15px; }
-    .expense-amt { color: var(--red-text); font-weight: bold; }
+    .expense-desc { color: var(--text); font-weight: 500; font-size: 15px; word-break: break-word; padding-right: 10px;}
+    .expense-amt { color: var(--red-text); font-weight: bold; white-space: nowrap; }
 
     .progress-list { display: flex; flex-direction: column;
     gap: 16px; margin-bottom: 30px; }
     .prog-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px;
-    padding: 18px 20px; }
+    padding: 18px 20px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     .prog-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 12px;
     }
     .prog-track { background: var(--input-bg); height: 16px; border-radius: 10px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
@@ -433,28 +535,28 @@ export default function App() {
     
     .board { display: flex; flex-direction: column; gap: 12px;
     }
+    
+    /* 3D FIDGET HOVER EFFECT FOR PLAYERS */
     .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; display: flex;
-    align-items: center; gap: 16px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
+    align-items: center; gap: 16px; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s, border-color 0.3s;
+    transform-style: preserve-3d;
     }
-    .card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 12px 24px rgba(0,0,0,0.15); border-color: var(--gold);
+    .card:hover { transform: translateY(-5px) scale(1.02) perspective(1000px) rotateX(4deg) rotateY(-2deg); box-shadow: 0 12px 24px rgba(0,0,0,0.15); border-color: var(--gold);
     }
     
     .rank-badge { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
     font-size: 26px; }
     @keyframes wobble {
-      0%, 100% { transform: rotate(0deg) scale(1);
-      }
-      25% { transform: rotate(-15deg) scale(1.2);
-      }
-      75% { transform: rotate(15deg) scale(1.2);
-      }
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(-15deg) scale(1.2); }
+      75% { transform: rotate(15deg) scale(1.2); }
     }
     .card:hover .rank-badge { animation: wobble 0.6s ease-in-out infinite;
     }
     
-    .player-info { flex: 1; }
+    .player-info { flex: 1; min-width: 0; }
     .player-name { font-weight: 600;
-    font-size: 17px; }
+    font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* Fixes long names on mobile */ }
     .rank-label { font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim);
     }
     .money { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 1px; color: var(--gold);
@@ -464,77 +566,67 @@ export default function App() {
     border-top: 1px solid var(--card-border); padding-top: 12px; }
     .btn-row { display: flex; gap: 6px; flex-wrap: wrap;
     }
-    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 12px; /* Touch target fix */
+    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 12px; 
     flex: 1; transition: 0.15s; }
-    .btn:hover { filter: brightness(1.1); transform: scale(1.05);
-    }
-    .btn-plus { background: rgba(52,200,100,0.15); color: #34c864; border: 1px solid rgba(52,200,100,0.25);
-    }
-    .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; border: 1px solid rgba(220,60,60,0.25);
-    }
-    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 8px 14px; border: 1px solid rgba(150,50,50,0.25);
-    }
+    .btn:hover { filter: brightness(1.1); transform: scale(1.05); }
+    .btn-plus { background: rgba(52,200,100,0.15); color: #34c864; border: 1px solid rgba(52,200,100,0.25); }
+    .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; border: 1px solid rgba(220,60,60,0.25); }
+    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 8px 14px; border: 1px solid rgba(150,50,50,0.25); }
     
-    .custom-row { display: flex; gap: 8px; flex-wrap: wrap; /* Wrap on mobile */
-    }
+    .custom-row { display: flex; gap: 8px; flex-wrap: wrap; }
     .amount-input, .pw-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 10px; color: var(--text);
-    outline: none; transition: border-color 0.2s; font-size: 16px !important; /* Prevents iOS auto-zoom */ min-width: 0;}
-    .amount-input:focus, .pw-input:focus { border-color: var(--gold);
-    }
+    outline: none; transition: border-color 0.2s; font-size: 16px !important; min-width: 0;}
+    .amount-input:focus, .pw-input:focus { border-color: var(--gold); }
     
     .add-section { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px;
     margin-top: 24px; }
     .add-section h3 { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; color: var(--gold);
     margin-bottom: 12px; }
-    .add-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; /* Wrap on mobile */
-    }
+    .add-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
     .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer;
-    border: none; transition: 0.15s; white-space: nowrap; }
-    .btn-add:hover { transform: scale(0.95); opacity: 0.9;
-    }
+    border: none; transition: 0.15s; white-space: nowrap; flex: 1; /* Helps wrap nicely on mobile */}
+    .btn-add:hover { transform: scale(0.95); opacity: 0.9; }
+
+    /* Admin Image List */
+    .image-list-admin { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; margin-bottom: 15px; }
+    .image-list-item { display: flex; justify-content: space-between; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; align-items: center; border: 1px solid var(--card-border); }
+    
+    /* Carousel Animations */
+    .carousel-image { transition: all 0.25s ease-out; cursor: pointer; }
+    .carousel-image.animating { opacity: 0; transform: scale(0.95); }
+    .carousel-image:hover { filter: brightness(1.05); transform: scale(1.02); }
     
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px;
     border-top: 1px solid var(--card-border); }
     .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border);
     padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 14px; }
-    .btn-unlock:hover { background: var(--card-border); color: var(--text);
-    transform: translateY(-2px); }
+    .btn-unlock:hover { background: var(--card-border); color: var(--text); transform: translateY(-2px); }
     
     .modal-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.75);
     backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; }
     .modal { background: #111318; border: 1px solid var(--gold);
     border-radius: 20px; padding: 32px; width: 90%; max-width: 360px; color: #fff; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1;
-    } }
-    .modal h2 { font-family: 'Bebas Neue'; font-size: 28px; color: var(--gold); margin-bottom: 6px;
-    }
+    @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .modal h2 { font-family: 'Bebas Neue'; font-size: 28px; color: var(--gold); margin-bottom: 6px; }
     .pw-input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px; color: #fff; }
-    .modal-btns { display: flex; gap: 10px;
-    }
-    .btn-confirm { flex: 1; background: var(--gold); color: #000; padding: 12px; border-radius: 10px; font-weight: 700; border: none;
-    cursor: pointer; }
+    .modal-btns { display: flex; gap: 10px; }
+    .btn-confirm { flex: 1; background: var(--gold); color: #000; padding: 12px; border-radius: 10px; font-weight: 700; border: none; cursor: pointer; }
     
     .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
     background: #14161e; border: 1px solid #fff; border-radius: 30px; padding: 10px 22px; color: #fff; font-size: 14px; font-weight: 500; z-index: 200;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: slideUp 0.3s ease-out; }
-    @keyframes slideUp { from { transform: translate(-50%, 20px);
-    opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+    @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 
-    .floating-pig { position: fixed;
-    font-size: 40px; pointer-events: none; z-index: 9999; transform: translate(-50%, -50%); animation: pigPop 1s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    /* FIDGET BURST ANIMATION */
+    .floating-emoji { position: fixed;
+    font-size: 35px; pointer-events: none; z-index: 9999; transform: translate(-50%, -50%); 
+    animation: burstPop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
     }
-    @keyframes pigPop {
-      0% { transform: translate(-50%, -50%) scale(0) rotate(-20deg);
-      opacity: 0; }
-      30% { transform: translate(-50%, -100px) scale(1.2) rotate(15deg); opacity: 1;
-      }
-      50% { transform: translate(-50%, -120px) scale(1) rotate(-10deg); opacity: 1;
-      }
-      80% { transform: translate(-50%, -140px) scale(1) rotate(5deg); opacity: 0.8;
-      }
-      100% { transform: translate(-50%, -160px) scale(0.5) rotate(0deg); opacity: 0;
-      }
+    @keyframes burstPop {
+      0% { transform: translate(-50%, -50%) scale(0) rotate(0deg); opacity: 0; }
+      40% { transform: translate(-50%, -80px) scale(1.3); opacity: 1; }
+      100% { transform: translate(-50%, -120px) scale(0.5); opacity: 0; }
     }
 
     /* --- PODIUM KAHOOT STYLE CSS --- */
@@ -545,44 +637,30 @@ export default function App() {
     .podium-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(50px, 12vw, 90px); color: var(--gold);
     text-shadow: 0 4px 20px rgba(201, 168, 76, 0.4); margin-bottom: 80px; animation: dropDown 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    @keyframes dropDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1;
-    } }
+    @keyframes dropDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-    .podium-stage { display: flex; align-items: flex-end; justify-content: center; gap: 15px; height: 420px; position: relative;
-    }
-    .podium-block-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: clamp(90px, 25vw, 140px);
-    }
+    .podium-stage { display: flex; align-items: flex-end; justify-content: center; gap: 15px; height: 420px; position: relative; }
+    .podium-block-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: clamp(90px, 25vw, 140px); }
     
     .podium-player-info { display: flex; flex-direction: column; align-items: center; opacity: 0;
-    animation: fadeDrop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; margin-bottom: 15px; text-align: center;
-    }
-    .podium-emoji { font-size: clamp(35px, 8vw, 55px); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
-    }
-    .podium-name { font-weight: 800; font-size: clamp(16px, 4vw, 22px); color: var(--text); margin-top: 5px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-    .podium-money { font-family: 'Bebas Neue'; font-size: clamp(20px, 5vw, 28px); color: var(--gold);
-    }
+    animation: fadeDrop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; margin-bottom: 15px; text-align: center; }
+    .podium-emoji { font-size: clamp(35px, 8vw, 55px); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+    .podium-name { font-weight: 800; font-size: clamp(16px, 4vw, 22px); color: var(--text); margin-top: 5px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+    .podium-money { font-family: 'Bebas Neue'; font-size: clamp(20px, 5vw, 28px); color: var(--gold); }
 
     .podium-block { width: 100%; border-radius: 12px 12px 0 0; display: flex; justify-content: center; padding-top: 15px;
     font-family: 'Bebas Neue'; font-size: 40px; color: rgba(255,255,255,0.8); box-shadow: inset 0 4px 10px rgba(255,255,255,0.2), 0 10px 30px rgba(0,0,0,0.5); transform-origin: bottom;
-    animation: riseUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transform: scaleY(0); position: relative; overflow: hidden;
-    }
-    @keyframes riseUp { to { transform: scaleY(1);
-    } }
+    animation: riseUp 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transform: scaleY(0); position: relative; overflow: hidden; }
+    @keyframes riseUp { to { transform: scaleY(1); } }
     @keyframes fadeDrop { 
-      0% { opacity: 0;
-      transform: translateY(-50px) scale(0.8); } 
-      100% { opacity: 1; transform: translateY(0) scale(1);
-      } 
+      0% { opacity: 0; transform: translateY(-50px) scale(0.8); } 
+      100% { opacity: 1; transform: translateY(0) scale(1); } 
     }
 
     .block-1 { height: 320px; background: linear-gradient(to top, #8a6c1c, #d4af37, #fef08a);
-    order: 2; z-index: 3; box-shadow: inset 0 4px 15px rgba(255,255,255,0.5), 0 10px 40px rgba(201,168,76,0.6);
-    }
-    .block-2 { height: 220px; background: linear-gradient(to top, #4b5563, #9ca3af, #e5e7eb); order: 1; z-index: 2;
-    }
-    .block-3 { height: 150px; background: linear-gradient(to top, #78350f, #b45309, #fbbf24); order: 3; z-index: 1;
-    }
+    order: 2; z-index: 3; box-shadow: inset 0 4px 15px rgba(255,255,255,0.5), 0 10px 40px rgba(201,168,76,0.6); }
+    .block-2 { height: 220px; background: linear-gradient(to top, #4b5563, #9ca3af, #e5e7eb); order: 1; z-index: 2; }
+    .block-3 { height: 150px; background: linear-gradient(to top, #78350f, #b45309, #fbbf24); order: 3; z-index: 1; }
 
     .wrapper-3 .podium-block { animation-delay: 0.2s; }
     .wrapper-3 .podium-player-info { animation-delay: 1.0s; }
@@ -591,8 +669,7 @@ export default function App() {
     .wrapper-1 .podium-block { animation-delay: 2.6s; }
     .wrapper-1 .podium-player-info { animation-delay: 3.4s; }
 
-    .winner-pulse-wrapper { display: flex; flex-direction: column; align-items: center; animation: winnerPulse 1.5s infinite alternate; animation-delay: 4.2s;
-    }
+    .winner-pulse-wrapper { display: flex; flex-direction: column; align-items: center; animation: winnerPulse 1.5s infinite alternate; animation-delay: 4.2s; }
     @keyframes winnerPulse {
       0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.5)); }
       100% { transform: scale(1.15); filter: drop-shadow(0 0 30px rgba(201, 168, 76, 1)); }
@@ -602,30 +679,23 @@ export default function App() {
       content: '';
       position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
       background: linear-gradient(to right, transparent, rgba(255,255,255,0.4), transparent);
-      animation: shineSweep 3s infinite;
-      animation-delay: 4s;
+      animation: shineSweep 3s infinite; animation-delay: 4s;
     }
     @keyframes shineSweep {
       0% { left: -100%; } 20% { left: 200%; } 100% { left: 200%; }
     }
 
     .honorable-mentions { margin-top: 60px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
-    max-width: 600px; opacity: 0; animation: slideUpMentions 0.6s forwards; animation-delay: 4.5s;
-    }
-    @keyframes slideUpMentions { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0);
-    } }
+    max-width: 600px; opacity: 0; animation: slideUpMentions 0.6s forwards; animation-delay: 4.5s; }
+    @keyframes slideUpMentions { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
     .mention-chip { background: var(--card-bg); border: 1px solid var(--card-border); padding: 8px 16px; border-radius: 20px; font-weight: 600;
-    display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s; color: var(--text);
-    }
+    display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s; color: var(--text); }
     .mention-chip:hover { transform: scale(1.1) translateY(-2px); border-color: var(--gold); }
-    .mention-money { color: var(--text-dim);
-    font-size: 14px; }
+    .mention-money { color: var(--text-dim); font-size: 14px; }
 
     .btn-back { position: absolute; top: 30px; left: 30px; background: transparent; border: 1px solid var(--card-border);
-    color: var(--text); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-weight: bold; transition: 0.2s; z-index: 20;
-    }
-    .btn-back:hover { background: var(--card-bg); transform: translateX(-5px);
-    }
+    color: var(--text); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-weight: bold; transition: 0.2s; z-index: 20; }
+    .btn-back:hover { background: var(--card-bg); transform: translateX(-5px); }
 
     /* --- CONFETTI SYSTEM --- */
     .confetti-container { position: absolute; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
@@ -831,23 +901,36 @@ export default function App() {
             })}
           </div>
 
-          {imageSettings?.url && (
-            <div style={{ textAlign: 'center', marginTop: '40px' }}>
+          {/* Render the Image Carousel */}
+          {images.length > 0 && (
+            <div className="carousel-container" style={{ textAlign: 'center', marginTop: '40px', position: 'relative' }}>
               <img 
-                src={imageSettings.url} 
+                src={images[currentImageIndex]?.url} 
                 alt="Leaderboard Custom" 
-                style={{ width: `${imageSettings.width}%`, maxWidth: '100%', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }} 
+                className={`carousel-image ${isAnimating ? 'animating' : ''}`}
+                onClick={nextImage}
+                style={{ width: `${tempImageWidth}%`, maxWidth: '100%', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }} 
               />
+              {images.length > 1 && (
+                <div style={{ marginTop: '12px', color: 'var(--text-dim)', fontSize: '11px', fontWeight: 'bold', letterSpacing: '1.5px' }}>
+                  CLICK IMAGE FOR NEXT ({currentImageIndex + 1} / {images.length})
+                </div>
+              )}
             </div>
           )}
 
           {isAdmin && (
             <>
               <div className="add-section">
-                <h3>📝 Site Settings</h3>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                  <h3 style={{margin: 0}}>📝 Site Settings</h3>
+                  <button className="btn-add" style={{ background: '#34c864', color: '#fff', padding: '6px 12px', fontSize: '12px', flex: 0 }} onClick={exportData}>💾 DOWNLOAD BACKUP</button>
+                </div>
+                
                 <div className="add-row">
-                  <input className="amount-input" placeholder="Site Title..." value={newTitleInput} onChange={e => setNewTitleInput(e.target.value)} />
-                  <button className="btn-add" onClick={saveTitle}>SAVE TITLE</button>
+                  <input className="amount-input" placeholder="Page Title (Banner)..." value={newSiteTitleInput} onChange={e => setNewSiteTitleInput(e.target.value)} />
+                  <input className="amount-input" placeholder="Browser Tab Name..." value={newTabTitleInput} onChange={e => setNewTabTitleInput(e.target.value)} />
+                  <button className="btn-add" onClick={saveTitles}>SAVE TITLES</button>
                 </div>
         
                 <div className="add-row" style={{ marginTop: '12px' }}>
@@ -875,19 +958,29 @@ export default function App() {
               </div>
 
               <div className="add-section">
-                <h3>🖼️ Custom Display Image</h3>
+                <h3>🖼️ Custom Display Images</h3>
                 <div className="add-row">
-                  <input className="amount-input" placeholder="Paste Image URL here (e.g., Imgur link)..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
+                  <input className="amount-input" placeholder="Paste Image URL here..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
+                  <button className="btn-add" onClick={addImage}>ADD IMAGE</button>
                 </div>
-                <div className="add-row" style={{ alignItems: 'center', marginTop: '10px' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text)', width: '70px', fontWeight: 'bold' }}>Size: {newImageWidth}%</span>
-                  <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
-                </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                  <button className="btn-add" style={{ flex: 1 }} onClick={saveImage}>SAVE IMAGE</button>
-                  {imageSettings?.url && (
-                    <button className="btn btn-del" style={{ flex: 1, padding: '10px' }} onClick={removeImage}>REMOVE IMG</button>
-                  )}
+
+                {/* List of currently added images */}
+                {images.length > 0 && (
+                  <div className="image-list-admin">
+                    {images.map((img, i) => (
+                      <div key={img.id} className="image-list-item">
+                        <span style={{color: 'var(--text-dim)', fontSize: '13px', fontWeight: 'bold'}}>IMG {i+1}</span>
+                        <img src={img.url} alt="preview" style={{height: '34px', borderRadius: '4px', maxWidth: '120px', objectFit: 'cover'}}/>
+                        <button className="btn btn-del" style={{padding: '6px 12px', flex: 0}} onClick={() => removeImage(img.id)}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="add-row" style={{ alignItems: 'center', marginTop: '16px' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text)', width: '70px', fontWeight: 'bold' }}>Size: {tempImageWidth}%</span>
+                  <input type="range" min="10" max="100" value={tempImageWidth} onChange={e => setTempImageWidth(e.target.value)} style={{ flex: 1 }} />
+                  <button className="btn-add" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={saveImageWidth}>SAVE SIZE</button>
                 </div>
               </div>
             </>
@@ -917,10 +1010,10 @@ export default function App() {
       
       {toast && <div className="toast">{toast.msg}</div>}
 
-      {/* RENDER THE PIGS */}
-      {pigs.map(pig => (
-        <div key={pig.id} className="floating-pig" style={{ left: pig.x, top: pig.y }}>
-          🐷
+      {/* RENDER THE FIDGET CLICK EFFECTS */}
+      {clickEffects.map(p => (
+        <div key={p.id} className="floating-emoji" style={{ left: p.x, top: p.y, transform: `translate(-50%, -50%) rotate(${p.rotation}deg)` }}>
+          {p.emoji}
         </div>
       ))}
 
