@@ -77,6 +77,10 @@ export default function App() {
   const [fidgetCount, setFidgetCount] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
 
+  // Refs for holdable background interaction
+  const holdInterval = useRef(null);
+  const pointerPos = useRef({ x: 0, y: 0 });
+
   // Load LIVE from Firebase
   useEffect(() => {
     const playersRef = ref(db, 'players');
@@ -147,6 +151,13 @@ export default function App() {
     });
 
     return () => { unsubPlayers(); unsubBars(); unsubImages(); unsubH1(); unsubTab(); unsubExpenses(); };
+  }, []);
+
+  // Cleanup for hold interval when component unmounts
+  useEffect(() => {
+    return () => {
+      if (holdInterval.current) clearInterval(holdInterval.current);
+    };
   }, []);
 
   // Confetti & Sound Timer Logic for Podium
@@ -230,8 +241,20 @@ export default function App() {
     }
   }
 
-  // Background Click Logic
-  function handleBackgroundClick(e) {
+  // Helper to spawn a single emoji based on coords
+  function spawnSingleEmoji(x, y) {
+    const emojis = ['🐷', '💰', '💸', '🚀', '✨', '🔥', '🎉'];
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+
+    const newEl = { id: Date.now() + Math.random(), x, y, emoji: randomEmoji };
+    setClickElements(prev => [...prev, newEl]);
+    
+    // Auto remove after 1 second
+    setTimeout(() => { setClickElements(prev => prev.filter(p => p.id !== newEl.id)); }, 1000);
+  }
+
+  // Background Pointer Event Logic (Allows hold to spam & dragging)
+  function handlePointerDown(e) {
     const isInteractive = e.target.closest('.card') || 
                           e.target.closest('.prog-card') || 
                           e.target.closest('.add-section') ||
@@ -247,18 +270,35 @@ export default function App() {
 
     if (isInteractive) return;
 
-    // Fidget sound effect
+    // Fidget sound effect (Plays once per press)
     const popAudio = new Audio("https://www.myinstants.com/media/sounds/pop-sound-effect.mp3");
     popAudio.volume = 0.2;
     popAudio.play().catch(()=>{});
 
-    // Random Fun Emojis
-    const emojis = ['🐷', '💰', '💸', '🚀', '✨', '🔥', '🎉'];
-    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    // Spawn the first one immediately
+    pointerPos.current = { x: e.clientX, y: e.clientY };
+    spawnSingleEmoji(e.clientX, e.clientY);
 
-    const newEl = { id: Date.now(), x: e.clientX, y: e.clientY, emoji: randomEmoji };
-    setClickElements(prev => [...prev, newEl]);
-    setTimeout(() => { setClickElements(prev => prev.filter(p => p.id !== newEl.id)); }, 1000);
+    // Setup interval for holding down
+    if (holdInterval.current) clearInterval(holdInterval.current);
+    holdInterval.current = setInterval(() => {
+      spawnSingleEmoji(pointerPos.current.x, pointerPos.current.y);
+    }, 120); // Spawns a new emoji every 120 milliseconds while held down
+  }
+
+  function handlePointerMove(e) {
+    // Update coordinates if the pointer is moving while held down
+    if (holdInterval.current) {
+      pointerPos.current = { x: e.clientX, y: e.clientY };
+    }
+  }
+
+  function handlePointerUpOrLeave() {
+    // Stop spawning when let go or cursor leaves
+    if (holdInterval.current) {
+      clearInterval(holdInterval.current);
+      holdInterval.current = null;
+    }
   }
 
   // --- ADMIN SETTINGS CONTROLS ---
@@ -430,7 +470,9 @@ export default function App() {
 
   const styles = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;800&display=swap');
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    /* Disables tap highlight coloring on mobile */
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     
     .theme-dark {
       --bg: #080a0f; --text: #e8eaf0;
@@ -453,8 +495,19 @@ export default function App() {
 
     body { background: var(--bg); transition: background 0.3s ease; font-family: 'DM Sans', sans-serif; }
     
-    .app-container { min-height: 100vh; background: var(--bg); color: var(--text); overflow-x: hidden; position: relative;
-    transition: all 0.3s ease; padding-bottom: 80px; }
+    /* Disable text selection on the main container so spam clicking/dragging doesn't highlight everything */
+    .app-container { 
+      min-height: 100vh; background: var(--bg); color: var(--text); overflow-x: hidden; position: relative;
+      transition: all 0.3s ease; padding-bottom: 80px; 
+      user-select: none; 
+      -webkit-user-select: none;
+    }
+
+    /* Re-enable text selection ONLY for inputs and forms so the admin panel isn't broken */
+    input, textarea {
+      user-select: text;
+      -webkit-user-select: text;
+    }
     
     .bg-orbs { position: absolute; inset: 0;
     z-index: 0; overflow: hidden; pointer-events: none; }
@@ -808,7 +861,13 @@ export default function App() {
   if (!loaded) return <div style={{ color: "#888", textAlign: "center", padding: 80, fontFamily: "sans-serif" }}>Loading Live Data...</div>;
 
   return (
-    <div className={`app-container ${isDarkMode ? 'theme-dark' : 'theme-light'}`} onClick={handleBackgroundClick}>
+    <div 
+      className={`app-container ${isDarkMode ? 'theme-dark' : 'theme-light'}`} 
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUpOrLeave}
+      onPointerCancel={handlePointerUpOrLeave}
+    >
       <style>{styles}</style>
       <div className="bg-orbs"><div className="orb orb1" /><div className="orb orb2" /></div>
 
@@ -1135,7 +1194,7 @@ export default function App() {
 
       {/* RENDER THE FIDGET EMOJIS */}
       {clickElements.map(el => (
-        <div key={el.id} className="floating-pig" style={{ left: el.x, top: el.y }}>
+        <div key={el.id} className="floating-pig" style={{ left: el.x, top: el.y, pointerEvents: 'none' }}>
           {el.emoji}
         </div>
       ))}
