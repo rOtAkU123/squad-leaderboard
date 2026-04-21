@@ -30,10 +30,16 @@ function getRankLabel(rank) {
 export default function App() {
   const [players, setPlayers] = useState([]);
   const [progressBars, setProgressBars] = useState([]);
-  const [imageSettings, setImageSettings] = useState({ url: "", width: 100 });
-  const [siteTitle, setSiteTitle] = useState("john pork123");
   
-  // New Expense States
+  // NEW: Multiple Images State
+  const [images, setImages] = useState([]);
+  const [currentImgIndex, setCurrentImgIndex] = useState(0);
+
+  // NEW: Separated Titles
+  const [h1Title, setH1Title] = useState("john pork123");
+  const [tabTitle, setTabTitle] = useState("john pork123");
+  
+  // Expense States
   const [expenses, setExpenses] = useState([]);
   const [showExpenses, setShowExpenses] = useState(false);
   const [expenseDescInput, setExpenseDescInput] = useState("");
@@ -51,22 +57,28 @@ export default function App() {
   
   const [newBarTitle, setNewBarTitle] = useState("");
   const [newBarTarget, setNewBarTarget] = useState(33);
+  
   const [newImageUrl, setNewImageUrl] = useState("");
   const [newImageWidth, setNewImageWidth] = useState(100);
 
-  const [newTitleInput, setNewTitleInput] = useState("");
+  // Separate inputs for the admin panel
+  const [newH1Input, setNewH1Input] = useState("");
+  const [newTabInput, setNewTabInput] = useState("");
+  
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
 
-  const [pigs, setPigs] = useState([]);
+  // Upgraded Fidget Elements
+  const [clickElements, setClickElements] = useState([]);
 
   // Load LIVE from Firebase
   useEffect(() => {
     const playersRef = ref(db, 'players');
     const barsRef = ref(db, 'progressBars');
-    const imageRef = ref(db, 'imageSettings');
-    const titleRef = ref(db, 'siteTitle');
+    const imagesRef = ref(db, 'carouselImages');
+    const h1Ref = ref(db, 'h1Title');
+    const tabRef = ref(db, 'tabTitle');
     const expensesRef = ref(db, 'expenses');
 
     const unsubPlayers = onValue(playersRef, (snapshot) => {
@@ -80,7 +92,7 @@ export default function App() {
     const unsubBars = onValue(barsRef, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.val();
-        if (val.empty) setProgressBars([]); // Fix for empty array deletion bug
+        if (val.empty) setProgressBars([]);
         else setProgressBars(Array.isArray(val) ? val : Object.values(val));
       } else {
         firebaseSet(barsRef, DEFAULT_BARS);
@@ -88,22 +100,33 @@ export default function App() {
       }
     });
 
-    const unsubImage = onValue(imageRef, (snapshot) => {
+    const unsubImages = onValue(imagesRef, (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.val();
-        setImageSettings(data);
-        setNewImageUrl(data.url);
-        setNewImageWidth(data.width);
+        const val = snapshot.val();
+        if (val.empty) setImages([]);
+        else setImages(Array.isArray(val) ? val : Object.values(val));
+      } else {
+        setImages([]);
       }
     });
 
-    const unsubTitle = onValue(titleRef, (snapshot) => {
+    const unsubH1 = onValue(h1Ref, (snapshot) => {
       if (snapshot.exists()) {
-        setSiteTitle(snapshot.val());
-        setNewTitleInput(snapshot.val());
+        setH1Title(snapshot.val());
+        setNewH1Input(snapshot.val());
+      } else {
+        firebaseSet(h1Ref, "john pork123");
+      }
+    });
+
+    const unsubTab = onValue(tabRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setTabTitle(snapshot.val());
+        setNewTabInput(snapshot.val());
         document.title = snapshot.val(); 
       } else {
-        firebaseSet(titleRef, "john pork123");
+        firebaseSet(tabRef, "john pork123");
+        document.title = "john pork123";
       }
     });
 
@@ -118,7 +141,7 @@ export default function App() {
       setLoaded(true);
     });
 
-    return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubExpenses(); };
+    return () => { unsubPlayers(); unsubBars(); unsubImages(); unsubH1(); unsubTab(); unsubExpenses(); };
   }, []);
 
   // Confetti & Sound Timer Logic for Podium
@@ -202,6 +225,7 @@ export default function App() {
     }
   }
 
+  // Upgraded Background Click Logic
   function handleBackgroundClick(e) {
     const isInteractive = e.target.closest('.card') || 
                           e.target.closest('.prog-card') || 
@@ -211,20 +235,26 @@ export default function App() {
                           e.target.closest('.theme-btn') || 
                           e.target.closest('.total-row') ||
                           e.target.closest('.expenses-list') ||
+                          e.target.closest('.carousel-wrapper') ||
                           e.target.tagName.toLowerCase() === 'button' || 
                           e.target.tagName.toLowerCase() === 'input';
 
     if (isInteractive) return;
-    const newPig = { id: Date.now(), x: e.clientX, y: e.clientY };
-    setPigs(prev => [...prev, newPig]);
-    setTimeout(() => { setPigs(prev => prev.filter(p => p.id !== newPig.id)); }, 1000);
+
+    // Random Fun Emojis
+    const emojis = ['🐷', '💰', '💸', '🚀', '✨', '🔥', '🎉'];
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+
+    const newEl = { id: Date.now(), x: e.clientX, y: e.clientY, emoji: randomEmoji };
+    setClickElements(prev => [...prev, newEl]);
+    setTimeout(() => { setClickElements(prev => prev.filter(p => p.id !== newEl.id)); }, 1000);
   }
 
   // --- ADMIN SETTINGS CONTROLS ---
-  function saveTitle() {
-    if (!newTitleInput.trim()) return;
-    firebaseSet(ref(db, 'siteTitle'), newTitleInput.trim());
-    showToast("📝 Title Updated");
+  function saveTitles() {
+    if (newH1Input.trim()) firebaseSet(ref(db, 'h1Title'), newH1Input.trim());
+    if (newTabInput.trim()) firebaseSet(ref(db, 'tabTitle'), newTabInput.trim());
+    showToast("📝 Titles Updated!");
   }
 
   function addExpense() {
@@ -240,7 +270,6 @@ export default function App() {
 
   function removeExpense(id) {
     const newExp = expenses.filter(e => e.id !== id);
-    // Passing { empty: true } when empty fixes the bug where Firebase deletes the node
     firebaseSet(ref(db, 'expenses'), newExp.length ? newExp : { empty: true });
     showToast("🗑️ Expense removed");
   }
@@ -292,17 +321,27 @@ export default function App() {
     firebaseSet(ref(db, 'progressBars'), newBars.length ? newBars : { empty: true });
   }
 
-  // --- IMAGE CONTROLS ---
-  function saveImage() {
+  // --- IMAGE CAROUSEL CONTROLS ---
+  function addImage() {
     if (!newImageUrl.trim()) return;
-    firebaseSet(ref(db, 'imageSettings'), { url: newImageUrl.trim(), width: parseInt(newImageWidth) });
-    showToast("🖼️ Image saved!");
+    const newImgs = [...images, { id: Date.now(), url: newImageUrl.trim(), width: parseInt(newImageWidth) }];
+    firebaseSet(ref(db, 'carouselImages'), newImgs);
+    setNewImageUrl("");
+    showToast("🖼️ Image Added!");
   }
 
-  function removeImage() {
-    firebaseSet(ref(db, 'imageSettings'), { url: "", width: 100 });
-    setNewImageUrl("");
+  function removeImage(id) {
+    const newImgs = images.filter(x => x.id !== id);
+    firebaseSet(ref(db, 'carouselImages'), newImgs.length ? newImgs : { empty: true });
+    // Reset index to avoid breaking if current image is deleted
+    setCurrentImgIndex(0); 
     showToast("🗑️ Image removed");
+  }
+
+  function nextImage() {
+    if (images.length > 1) {
+      setCurrentImgIndex((prev) => (prev + 1) % images.length);
+    }
   }
 
   const styles = `
@@ -464,7 +503,7 @@ export default function App() {
     border-top: 1px solid var(--card-border); padding-top: 12px; }
     .btn-row { display: flex; gap: 6px; flex-wrap: wrap;
     }
-    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 12px; /* Touch target fix */
+    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 12px;
     flex: 1; transition: 0.15s; }
     .btn:hover { filter: brightness(1.1); transform: scale(1.05);
     }
@@ -475,10 +514,10 @@ export default function App() {
     .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 8px 14px; border: 1px solid rgba(150,50,50,0.25);
     }
     
-    .custom-row { display: flex; gap: 8px; flex-wrap: wrap; /* Wrap on mobile */
+    .custom-row { display: flex; gap: 8px; flex-wrap: wrap; 
     }
     .amount-input, .pw-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 10px; color: var(--text);
-    outline: none; transition: border-color 0.2s; font-size: 16px !important; /* Prevents iOS auto-zoom */ min-width: 0;}
+    outline: none; transition: border-color 0.2s; font-size: 16px !important; min-width: 0;}
     .amount-input:focus, .pw-input:focus { border-color: var(--gold);
     }
     
@@ -486,13 +525,21 @@ export default function App() {
     margin-top: 24px; }
     .add-section h3 { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; color: var(--gold);
     margin-bottom: 12px; }
-    .add-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; /* Wrap on mobile */
+    .add-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; 
     }
     .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer;
     border: none; transition: 0.15s; white-space: nowrap; }
     .btn-add:hover { transform: scale(0.95); opacity: 0.9;
     }
     
+    /* --- CAROUSEL STYLES --- */
+    .carousel-wrapper { display: grid; place-items: center; margin-top: 40px; cursor: pointer; position: relative; }
+    .carousel-wrapper > * { grid-area: 1 / 1; }
+    .carousel-img { opacity: 0; transform: scale(0.9) translateY(10px); transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); pointer-events: none; z-index: 1;}
+    .carousel-img.active { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; z-index: 2;}
+    .carousel-hint { position: absolute; bottom: -30px; font-size: 12px; color: var(--text-dim); opacity: 0; transition: 0.3s; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;}
+    .carousel-wrapper:hover .carousel-hint { opacity: 1; bottom: -25px; }
+
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px;
     border-top: 1px solid var(--card-border); }
     .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border);
@@ -634,6 +681,18 @@ export default function App() {
       0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
       100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0; }
     }
+
+    /* --- MOBILE / TABLET OPTIMIZATIONS --- */
+    @media (max-width: 600px) {
+      .wrapper { padding: 20px 15px; }
+      .header h1 { font-size: clamp(32px, 12vw, 50px); margin-bottom: 20px; }
+      .card, .prog-card, .add-section { padding: 15px; }
+      .btn-row, .custom-row, .add-row { flex-direction: column; width: 100%; }
+      .amount-input, .pw-input, .btn, .btn-add { width: 100%; flex: 1; min-width: 100%; }
+      .money { font-size: 22px; }
+      .btn-del { flex: 1; padding: 10px 12px; }
+      .carousel-wrapper { margin-top: 25px; }
+    }
   `;
 
   if (!loaded) return <div style={{ color: "#888", textAlign: "center", padding: 80, fontFamily: "sans-serif" }}>Loading Live Data...</div>;
@@ -731,7 +790,7 @@ export default function App() {
           </div>
 
           <div className="header">
-            <h1>{siteTitle}</h1>
+            <h1>{h1Title}</h1>
           </div>
 
           <div className="stats-container">
@@ -816,7 +875,7 @@ export default function App() {
                   <div className="money">${player.money.toFixed(2)}</div>
 
                   {isAdmin && (
-                    <div style={{marginLeft: "auto"}}>
+                    <div style={{marginLeft: "auto", width: window.innerWidth <= 600 ? '100%' : 'auto', marginTop: window.innerWidth <= 600 ? '10px' : '0'}}>
                       <div className="custom-row">
                         <input type="number" className="amount-input" style={{flex: '1 1 60px'}} placeholder="$0" 
                           value={adjustAmounts[player.id] || ""} onChange={e => setAdjustAmounts(prev => ({ ...prev, [player.id]: e.target.value }))} />
@@ -831,13 +890,19 @@ export default function App() {
             })}
           </div>
 
-          {imageSettings?.url && (
-            <div style={{ textAlign: 'center', marginTop: '40px' }}>
-              <img 
-                src={imageSettings.url} 
-                alt="Leaderboard Custom" 
-                style={{ width: `${imageSettings.width}%`, maxWidth: '100%', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }} 
-              />
+          {/* NEW MULTIPLE IMAGES CAROUSEL */}
+          {images.length > 0 && (
+            <div className="carousel-wrapper" onClick={nextImage}>
+              {images.map((img, idx) => (
+                <img 
+                  key={img.id}
+                  src={img.url} 
+                  alt="Custom Display" 
+                  className={`carousel-img ${idx === currentImgIndex ? 'active' : ''}`}
+                  style={{ width: `${img.width}%` }} 
+                />
+              ))}
+              {images.length > 1 && <div className="carousel-hint">Click to cycle ({currentImgIndex + 1}/{images.length})</div>}
             </div>
           )}
 
@@ -846,11 +911,14 @@ export default function App() {
               <div className="add-section">
                 <h3>📝 Site Settings</h3>
                 <div className="add-row">
-                  <input className="amount-input" placeholder="Site Title..." value={newTitleInput} onChange={e => setNewTitleInput(e.target.value)} />
-                  <button className="btn-add" onClick={saveTitle}>SAVE TITLE</button>
+                  <input className="amount-input" placeholder="Website Main Title (H1)..." value={newH1Input} onChange={e => setNewH1Input(e.target.value)} />
                 </div>
-        
                 <div className="add-row" style={{ marginTop: '12px' }}>
+                  <input className="amount-input" placeholder="Browser Tab Name..." value={newTabInput} onChange={e => setNewTabInput(e.target.value)} />
+                </div>
+                <button className="btn-add" style={{ marginTop: '12px', width: '100%' }} onClick={saveTitles}>SAVE TITLES</button>
+        
+                <div className="add-row" style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--card-border)' }}>
                   <input className="amount-input" style={{flex: 1}} placeholder="Expense Info (e.g. Pizza)..." value={expenseDescInput} onChange={e => setExpenseDescInput(e.target.value)} />
                   <input type="number" className="amount-input" style={{flex: 0.5, minWidth: '80px'}} placeholder="$ Amount" value={expenseAmountInput} onChange={e => setExpenseAmountInput(e.target.value)} />
                   <button className="btn-add" style={{ background: 'var(--red-text)', color: '#fff' }} onClick={addExpense}>ADD SPENT</button>
@@ -875,20 +943,28 @@ export default function App() {
               </div>
 
               <div className="add-section">
-                <h3>🖼️ Custom Display Image</h3>
+                <h3>🖼️ Carousel Images</h3>
                 <div className="add-row">
-                  <input className="amount-input" placeholder="Paste Image URL here (e.g., Imgur link)..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
+                  <input className="amount-input" placeholder="Paste Image URL here..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} />
                 </div>
                 <div className="add-row" style={{ alignItems: 'center', marginTop: '10px' }}>
                   <span style={{ fontSize: '13px', color: 'var(--text)', width: '70px', fontWeight: 'bold' }}>Size: {newImageWidth}%</span>
                   <input type="range" min="10" max="100" value={newImageWidth} onChange={e => setNewImageWidth(e.target.value)} style={{ flex: 1 }} />
                 </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                  <button className="btn-add" style={{ flex: 1 }} onClick={saveImage}>SAVE IMAGE</button>
-                  {imageSettings?.url && (
-                    <button className="btn btn-del" style={{ flex: 1, padding: '10px' }} onClick={removeImage}>REMOVE IMG</button>
-                  )}
-                </div>
+                <button className="btn-add" style={{ marginTop: '12px', width: '100%' }} onClick={addImage}>ADD TO CAROUSEL</button>
+                
+                {images.length > 0 && (
+                  <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {images.map((img, i) => (
+                      <div key={img.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--input-bg)', padding: '10px', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
+                        <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>
+                          Img {i + 1}: {img.url.substring(0, 30)}...
+                        </span>
+                        <button className="btn btn-del" style={{ padding: '6px 12px', flex: 0 }} onClick={() => removeImage(img.id)}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -917,10 +993,10 @@ export default function App() {
       
       {toast && <div className="toast">{toast.msg}</div>}
 
-      {/* RENDER THE PIGS */}
-      {pigs.map(pig => (
-        <div key={pig.id} className="floating-pig" style={{ left: pig.x, top: pig.y }}>
-          🐷
+      {/* RENDER THE FIDGET EMOJIS */}
+      {clickElements.map(el => (
+        <div key={el.id} className="floating-pig" style={{ left: el.x, top: el.y }}>
+          {el.emoji}
         </div>
       ))}
 
