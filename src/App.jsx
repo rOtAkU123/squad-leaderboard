@@ -32,7 +32,12 @@ export default function App() {
   const [progressBars, setProgressBars] = useState([]);
   const [imageSettings, setImageSettings] = useState({ url: "", width: 100 });
   const [siteTitle, setSiteTitle] = useState("john pork123");
-  const [moneyUsed, setMoneyUsed] = useState(0);
+  
+  // New Expense States
+  const [expenses, setExpenses] = useState([]);
+  const [showExpenses, setShowExpenses] = useState(false);
+  const [expenseDescInput, setExpenseDescInput] = useState("");
+  const [expenseAmountInput, setExpenseAmountInput] = useState("");
   
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showPodium, setShowPodium] = useState(false);
@@ -50,7 +55,6 @@ export default function App() {
   const [newImageWidth, setNewImageWidth] = useState(100);
 
   const [newTitleInput, setNewTitleInput] = useState("");
-  const [usedAmountInput, setUsedAmountInput] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState(null);
   const toastRef = useRef(null);
@@ -63,7 +67,7 @@ export default function App() {
     const barsRef = ref(db, 'progressBars');
     const imageRef = ref(db, 'imageSettings');
     const titleRef = ref(db, 'siteTitle');
-    const usedRef = ref(db, 'moneyUsed');
+    const expensesRef = ref(db, 'expenses');
 
     const unsubPlayers = onValue(playersRef, (snapshot) => {
       if (snapshot.exists()) setPlayers(snapshot.val());
@@ -74,8 +78,11 @@ export default function App() {
     });
 
     const unsubBars = onValue(barsRef, (snapshot) => {
-      if (snapshot.exists()) setProgressBars(snapshot.val());
-      else {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (val.empty) setProgressBars([]); // Fix for empty array deletion bug
+        else setProgressBars(Array.isArray(val) ? val : Object.values(val));
+      } else {
         firebaseSet(barsRef, DEFAULT_BARS);
         setProgressBars(DEFAULT_BARS);
       }
@@ -94,19 +101,24 @@ export default function App() {
       if (snapshot.exists()) {
         setSiteTitle(snapshot.val());
         setNewTitleInput(snapshot.val());
-        document.title = snapshot.val(); // Update browser tab
+        document.title = snapshot.val(); 
       } else {
         firebaseSet(titleRef, "john pork123");
       }
     });
 
-    const unsubUsed = onValue(usedRef, (snapshot) => {
-      if (snapshot.exists()) setMoneyUsed(snapshot.val());
-      else firebaseSet(usedRef, 0);
+    const unsubExpenses = onValue(expensesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (val.empty) setExpenses([]);
+        else setExpenses(Array.isArray(val) ? val : Object.values(val));
+      } else {
+        setExpenses([]);
+      }
       setLoaded(true);
     });
 
-    return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubUsed(); };
+    return () => { unsubPlayers(); unsubBars(); unsubImage(); unsubTitle(); unsubExpenses(); };
   }, []);
 
   // Confetti & Sound Timer Logic for Podium
@@ -117,22 +129,18 @@ export default function App() {
     let chimeAudio;
 
     if (showPodium) {
-      // Play drumroll/buildup sound immediately when podium is shown
       drumAudio = new Audio("https://www.myinstants.com/media/sounds/drumroll.mp3");
       drumAudio.volume = 0.7;
       drumAudio.play().catch(e => console.log("Audio play blocked by browser:", e));
 
-      // Trigger confetti and celebration sound shortly after the 1st place block finishes animating
       timer = setTimeout(() => {
         setShowConfetti(true);
         
-        // Stop drum roll when the winner pops up
         if (drumAudio) {
           drumAudio.pause();
           drumAudio.currentTime = 0;
         }
 
-        // Play win celebration sounds (Applause + Chime)
         winAudio = new Audio("https://www.myinstants.com/media/sounds/applause.mp3");
         winAudio.volume = 0.8;
         winAudio.play().catch(e => console.log("Audio play blocked by browser:", e));
@@ -145,7 +153,6 @@ export default function App() {
       setShowConfetti(false);
     }
     
-    // Cleanup audios when closing podium or unmounting
     return () => {
       clearTimeout(timer);
       if (drumAudio) {
@@ -171,8 +178,9 @@ export default function App() {
   const third = sorted[2];
   const honorableMentions = sorted.slice(3);
 
-  // Calculations
+  // Math Calculations (Gross and Net)
   const grossTotal = players.reduce((s, p) => s + p.money, 0); 
+  const moneyUsed = expenses.reduce((s, e) => s + e.amount, 0);
   const netTotal = grossTotal - moneyUsed;
 
   function showToast(msg, type = "success") {
@@ -201,6 +209,8 @@ export default function App() {
                           e.target.closest('.modal') || 
                           e.target.closest('.btn') || 
                           e.target.closest('.theme-btn') || 
+                          e.target.closest('.total-row') ||
+                          e.target.closest('.expenses-list') ||
                           e.target.tagName.toLowerCase() === 'button' || 
                           e.target.tagName.toLowerCase() === 'input';
 
@@ -217,13 +227,22 @@ export default function App() {
     showToast("📝 Title Updated");
   }
 
-  function adjustMoneyUsed(sign) {
-    const val = parseFloat(usedAmountInput);
+  function addExpense() {
+    const desc = expenseDescInput.trim() || "Misc Expense";
+    const val = parseFloat(expenseAmountInput);
     if (isNaN(val) || val <= 0) return;
-    const newTotalUsed = Math.max(0, moneyUsed + (sign * val));
-    firebaseSet(ref(db, 'moneyUsed'), parseFloat(newTotalUsed.toFixed(2)));
-    setUsedAmountInput("");
-    showToast(`${sign > 0 ? "+" : "-"}$${val.toFixed(2)} Money Used`);
+    const newExp = [...expenses, { id: Date.now(), desc, amount: val }];
+    firebaseSet(ref(db, 'expenses'), newExp);
+    setExpenseDescInput("");
+    setExpenseAmountInput("");
+    showToast(`💸 Added $${val.toFixed(2)} for ${desc}`);
+  }
+
+  function removeExpense(id) {
+    const newExp = expenses.filter(e => e.id !== id);
+    // Passing { empty: true } when empty fixes the bug where Firebase deletes the node
+    firebaseSet(ref(db, 'expenses'), newExp.length ? newExp : { empty: true });
+    showToast("🗑️ Expense removed");
   }
 
   // --- PLAYER CONTROLS ---
@@ -270,7 +289,7 @@ export default function App() {
 
   function removeBar(id) {
     const newBars = progressBars.filter(x => x.id !== id);
-    firebaseSet(ref(db, 'progressBars'), newBars);
+    firebaseSet(ref(db, 'progressBars'), newBars.length ? newBars : { empty: true });
   }
 
   // --- IMAGE CONTROLS ---
@@ -296,6 +315,7 @@ export default function App() {
       --card-bg: rgba(255,255,255,0.035); --card-border: rgba(255,255,255,0.07);
       --input-bg: rgba(255,255,255,0.06); --orb-opacity: 0.18; --gold: #c9a84c; --gold-bg: rgba(201,168,76,0.05);
       --red-bg: rgba(220,60,60,0.08); --red-text: #e05050;
+      --green-bg: rgba(52,200,100,0.08); --green-text: #34c864;
       --podium-grad-inner: #151823;
       --podium-grad-outer: #000000;
     }
@@ -304,6 +324,7 @@ export default function App() {
       --card-bg: #ffffff; --card-border: #e2e8f0;
       --input-bg: #f1f5f9; --orb-opacity: 0.25; --gold: #d97706; --gold-bg: #fef3c7;
       --red-bg: #fee2e2; --red-text: #dc2626;
+      --green-bg: #dcfce7; --green-text: #16a34a;
       --podium-grad-inner: #ffffff; --podium-grad-outer: #aeb9cc;
     }
 
@@ -361,11 +382,11 @@ export default function App() {
 
     .stats-container { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px;
     }
-    .total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border: 1px solid var(--card-border);
+    .total-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border: 1px solid var(--card-border);
     border-radius: 12px; transition: transform 0.2s; }
-    .total-row:hover { transform: scale(1.02);
+    .total-row:hover { transform: scale(1.01);
     }
-    .total-label { font-size: 13px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; font-weight: bold;
+    .total-label { font-size: 13px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; font-weight: bold; display: flex; align-items: center; gap: 8px;
     }
     .total-val { font-family: 'Bebas Neue', sans-serif; font-size: 28px; transition: color 0.3s;
     }
@@ -374,9 +395,20 @@ export default function App() {
     }
     .row-pot .total-val { color: var(--gold); }
     
-    .row-used { background: var(--red-bg);
+    .row-net { background: var(--green-bg); border-color: var(--green-text); 
     }
+    .row-net .total-val { color: var(--green-text); }
+    
+    .row-used { background: var(--red-bg); cursor: pointer; border-color: transparent;
+    }
+    .row-used:hover { border-color: var(--red-text); }
     .row-used .total-val { color: var(--red-text); }
+
+    .expenses-list { padding: 12px 20px; background: var(--card-bg); border: 1px solid var(--card-border); border-top: none; border-radius: 0 0 12px 12px; margin-top: -12px; margin-bottom: 10px; }
+    .expense-item { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; padding-bottom: 8px; border-bottom: 1px dashed var(--card-border); }
+    .expense-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .expense-desc { color: var(--text); font-weight: 500; font-size: 15px; }
+    .expense-amt { color: var(--red-text); font-weight: bold; }
 
     .progress-list { display: flex; flex-direction: column;
     gap: 16px; margin-bottom: 30px; }
@@ -430,9 +462,9 @@ export default function App() {
     
     .admin-controls { display: flex; flex-direction: column; gap: 8px; min-width: 160px; margin-top: 12px;
     border-top: 1px solid var(--card-border); padding-top: 12px; }
-    .btn-row { display: flex; gap: 6px;
+    .btn-row { display: flex; gap: 6px; flex-wrap: wrap;
     }
-    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; padding: 6px 10px;
+    .btn { border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; padding: 10px 12px; /* Touch target fix */
     flex: 1; transition: 0.15s; }
     .btn:hover { filter: brightness(1.1); transform: scale(1.05);
     }
@@ -440,31 +472,31 @@ export default function App() {
     }
     .btn-minus { background: rgba(220,60,60,0.15); color: #e05050; border: 1px solid rgba(220,60,60,0.25);
     }
-    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 6px 12px; border: 1px solid rgba(150,50,50,0.25);
+    .btn-del { background: rgba(150,50,50,0.15); color: #c04040; flex: 0; padding: 8px 14px; border: 1px solid rgba(150,50,50,0.25);
     }
     
-    .custom-row { display: flex; gap: 5px;
+    .custom-row { display: flex; gap: 8px; flex-wrap: wrap; /* Wrap on mobile */
     }
-    .amount-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; color: var(--text);
-    outline: none; transition: border-color 0.2s; }
-    .amount-input:focus { border-color: var(--gold);
+    .amount-input, .pw-input { flex: 1; background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 10px; color: var(--text);
+    outline: none; transition: border-color 0.2s; font-size: 16px !important; /* Prevents iOS auto-zoom */ min-width: 0;}
+    .amount-input:focus, .pw-input:focus { border-color: var(--gold);
     }
     
     .add-section { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px;
     margin-top: 24px; }
     .add-section h3 { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; color: var(--gold);
     margin-bottom: 12px; }
-    .add-row { display: flex; gap: 10px; margin-bottom: 10px;
+    .add-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; /* Wrap on mobile */
     }
     .btn-add { background: var(--gold); color: #000; padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer;
-    border: none; transition: 0.15s; }
+    border: none; transition: 0.15s; white-space: nowrap; }
     .btn-add:hover { transform: scale(0.95); opacity: 0.9;
     }
     
     .footer-bar { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px;
     border-top: 1px solid var(--card-border); }
     .btn-unlock { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--card-border);
-    padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+    padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 14px; }
     .btn-unlock:hover { background: var(--card-border); color: var(--text);
     transform: translateY(-2px); }
     
@@ -477,8 +509,7 @@ export default function App() {
     } }
     .modal h2 { font-family: 'Bebas Neue'; font-size: 28px; color: var(--gold); margin-bottom: 6px;
     }
-    .pw-input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; color: #fff;
-    margin-bottom: 12px; outline: none; }
+    .pw-input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px; color: #fff; }
     .modal-btns { display: flex; gap: 10px;
     }
     .btn-confirm { flex: 1; background: var(--gold); color: #000; padding: 12px; border-radius: 10px; font-weight: 700; border: none;
@@ -553,28 +584,18 @@ export default function App() {
     .block-3 { height: 150px; background: linear-gradient(to top, #78350f, #b45309, #fbbf24); order: 3; z-index: 1;
     }
 
-    /* Exaggerated Animation Delays (Staggered like Kahoot: 3rd -> 2nd -> 1st) */
-    .wrapper-3 .podium-block { animation-delay: 0.2s;
-    }
+    .wrapper-3 .podium-block { animation-delay: 0.2s; }
     .wrapper-3 .podium-player-info { animation-delay: 1.0s; }
-    
-    .wrapper-2 .podium-block { animation-delay: 1.4s;
-    }
+    .wrapper-2 .podium-block { animation-delay: 1.4s; }
     .wrapper-2 .podium-player-info { animation-delay: 2.2s; }
-    
-    .wrapper-1 .podium-block { animation-delay: 2.6s;
-    }
+    .wrapper-1 .podium-block { animation-delay: 2.6s; }
     .wrapper-1 .podium-player-info { animation-delay: 3.4s; }
 
-    /* 1st Place extra juice animations inside the wrapper so it doesn't break opacity!
-    */
     .winner-pulse-wrapper { display: flex; flex-direction: column; align-items: center; animation: winnerPulse 1.5s infinite alternate; animation-delay: 4.2s;
     }
     @keyframes winnerPulse {
-      0% { transform: scale(1);
-      filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.5)); }
-      100% { transform: scale(1.15);
-      filter: drop-shadow(0 0 30px rgba(201, 168, 76, 1)); }
+      0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(201, 168, 76, 0.5)); }
+      100% { transform: scale(1.15); filter: drop-shadow(0 0 30px rgba(201, 168, 76, 1)); }
     }
     
     .block-1::after {
@@ -585,9 +606,7 @@ export default function App() {
       animation-delay: 4s;
     }
     @keyframes shineSweep {
-      0% { left: -100%;
-      } 20% { left: 200%; } 100% { left: 200%;
-      }
+      0% { left: -100%; } 20% { left: 200%; } 100% { left: 200%; }
     }
 
     .honorable-mentions { margin-top: 60px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
@@ -609,15 +628,11 @@ export default function App() {
     }
 
     /* --- CONFETTI SYSTEM --- */
-    .confetti-container { position: absolute; inset: 0;
-    pointer-events: none; z-index: 100; overflow: hidden; }
-    .confetti-piece { position: absolute; top: -20px; width: 10px; height: 10px;
-    animation: confettiFall linear forwards; border-radius: 2px; }
+    .confetti-container { position: absolute; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
+    .confetti-piece { position: absolute; top: -20px; width: 10px; height: 10px; animation: confettiFall linear forwards; border-radius: 2px; }
     @keyframes confettiFall {
-      0% { transform: translateY(0) rotate(0deg) scale(1);
-      opacity: 1; }
-      100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0;
-      }
+      0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+      100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0; }
     }
   `;
 
@@ -690,7 +705,7 @@ export default function App() {
             )}
           </div>
 
-          {/* HONORABLE MENTIONS (4th place and below) */}
+          {/* HONORABLE MENTIONS */}
           {honorableMentions.length > 0 && (
             <div className="honorable-mentions">
               {honorableMentions.map(p => 
@@ -720,16 +735,45 @@ export default function App() {
           </div>
 
           <div className="stats-container">
+            {/* Total Raised (Gross) */}
             <div className="total-row row-pot">
               <span className="total-label">Total Pot 💰</span>
+              <span className="total-val">${grossTotal.toFixed(2)}</span>
+            </div>
+
+            {/* Net Total (Gross - Expenses) */}
+            <div className="total-row row-net">
+              <span className="total-label">Net Left 🏦</span>
               <span className="total-val">${netTotal.toFixed(2)}</span>
             </div>
             
-            {moneyUsed > 0 && (
-              <div className="total-row row-used">
-                <span className="total-label">Money Used 💸</span>
-                <span className="total-val">-${moneyUsed.toFixed(2)}</span>
-              </div>
+            {/* Clickable Money Spent */}
+            {expenses.length > 0 && (
+              <>
+                <div className="total-row row-used" onClick={() => setShowExpenses(!showExpenses)}>
+                  <span className="total-label">
+                    Money Used 💸 
+                    <span style={{ fontSize: '10px', opacity: 0.7 }}>{showExpenses ? '▲' : '▼'}</span>
+                  </span>
+                  <span className="total-val">-${moneyUsed.toFixed(2)}</span>
+                </div>
+
+                {showExpenses && (
+                  <div className="expenses-list">
+                    {expenses.map(exp => (
+                      <div key={exp.id} className="expense-item">
+                        <span className="expense-desc">• {exp.desc}</span>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <span className="expense-amt">${exp.amount.toFixed(2)}</span>
+                          {isAdmin && (
+                            <button className="btn btn-del" style={{ padding: '6px 10px', flex: 0 }} onClick={(e) => { e.stopPropagation(); removeExpense(exp.id); }}>✕</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -774,7 +818,7 @@ export default function App() {
                   {isAdmin && (
                     <div style={{marginLeft: "auto"}}>
                       <div className="custom-row">
-                        <input type="number" className="amount-input" style={{width: '60px'}} placeholder="$0" 
+                        <input type="number" className="amount-input" style={{flex: '1 1 60px'}} placeholder="$0" 
                           value={adjustAmounts[player.id] || ""} onChange={e => setAdjustAmounts(prev => ({ ...prev, [player.id]: e.target.value }))} />
                         <button className="btn btn-plus" onClick={() => applyCustom(player.id, 1)}>+</button>
                         <button className="btn btn-minus" onClick={() => applyCustom(player.id, -1)}>−</button>
@@ -807,9 +851,9 @@ export default function App() {
                 </div>
         
                 <div className="add-row" style={{ marginTop: '12px' }}>
-                  <input type="number" className="amount-input" placeholder="Money Used ($)..." value={usedAmountInput} onChange={e => setUsedAmountInput(e.target.value)} />
-                  <button className="btn-add" style={{ background: 'var(--red-text)', color: '#fff' }} onClick={() => adjustMoneyUsed(1)}>ADD SPENT</button>
-                  <button className="btn-add" style={{ background: 'var(--input-bg)', color: 'var(--text)' }} onClick={() => adjustMoneyUsed(-1)}>REDUCE</button>
+                  <input className="amount-input" style={{flex: 1}} placeholder="Expense Info (e.g. Pizza)..." value={expenseDescInput} onChange={e => setExpenseDescInput(e.target.value)} />
+                  <input type="number" className="amount-input" style={{flex: 0.5, minWidth: '80px'}} placeholder="$ Amount" value={expenseAmountInput} onChange={e => setExpenseAmountInput(e.target.value)} />
+                  <button className="btn-add" style={{ background: 'var(--red-text)', color: '#fff' }} onClick={addExpense}>ADD SPENT</button>
                 </div>
               </div>
 
@@ -825,7 +869,7 @@ export default function App() {
                 <h3>📊 Add Progress Bar</h3>
                 <div className="add-row">
                   <input className="amount-input" placeholder="Bar Title..." value={newBarTitle} onChange={e => setNewBarTitle(e.target.value)} />
-                  <input type="number" className="amount-input" style={{flex: 0.5}} placeholder="Target $" value={newBarTarget} onChange={e => setNewBarTarget(e.target.value)} />
+                  <input type="number" className="amount-input" style={{flex: 0.5, minWidth: '80px'}} placeholder="Target $" value={newBarTarget} onChange={e => setNewBarTarget(e.target.value)} />
                   <button className="btn-add" onClick={addBar}>ADD</button>
                 </div>
               </div>
