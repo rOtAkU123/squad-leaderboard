@@ -537,6 +537,7 @@ export default function App() {
           id: Date.now(), 
           url: base64String, 
           width: parseInt(newCommImageWidth),
+          subtext: "", // NEW FIELD FOR SUBTEXT
           uploaderId: localUserId // Tag this upload with the user's hidden device ID
         }];
         firebaseSet(ref(db, 'communityImages'), newImgs);
@@ -552,6 +553,12 @@ export default function App() {
 
   function updateCommunityImageWidth(id, newWidth) {
     const newImgs = communityImages.map(img => img.id === id ? { ...img, width: parseInt(newWidth) } : img);
+    firebaseSet(ref(db, 'communityImages'), newImgs);
+  }
+
+  // NEW FUNCTION TO UPDATE SUBTEXT
+  function updateCommunityImageSubtext(id, newSubtext) {
+    const newImgs = communityImages.map(img => img.id === id ? { ...img, subtext: newSubtext } : img);
     firebaseSet(ref(db, 'communityImages'), newImgs);
   }
 
@@ -1196,8 +1203,24 @@ export default function App() {
                       style={{ width: `${img.width}%`, borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
                     />
                     
-                    {/* Controls (Public Resizing, Admin Deleting) */}
-                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '10px', marginTop: '12px' }}>
+                    {/* Controls (Public Resizing, Caption, Admin Deleting) */}
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+                      
+                      {/* Subtext View/Edit Area */}
+                      <div style={{ width: '100%', marginBottom: '8px' }}>
+                        {(img.uploaderId === localUserId || isAdmin) ? (
+                          <input 
+                            type="text" 
+                            placeholder="Add a caption..." 
+                            value={img.subtext || ""} 
+                            onChange={(e) => updateCommunityImageSubtext(img.id, e.target.value)}
+                            style={{ width: '100%', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '10px', color: 'var(--text)', outline: 'none' }}
+                          />
+                        ) : (
+                          img.subtext && <div style={{ width: '100%', padding: '10px', textAlign: 'center', fontStyle: 'italic', color: 'var(--text-dim)' }}>"{img.subtext}"</div>
+                        )}
+                      </div>
+
                       {(img.uploaderId === localUserId || isAdmin) ? (
                         <>
                           <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Size:</span>
